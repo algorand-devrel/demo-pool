@@ -14,6 +14,7 @@ client = algod.AlgodClient(token, url)
 asset_a = 100
 asset_b = 101
 
+
 def demo():
     # Create acct
     addr, pk = get_accounts()[0]
@@ -25,7 +26,6 @@ def demo():
 
     app_addr = logic.get_application_address(app_id)
     print("Application Address: {}".format(app_addr))
-
 
     # Initialize Pool
     sp = client.suggested_params()
@@ -39,7 +39,7 @@ def demo():
     result = wait_for_confirmation(client, txid, 4)
     print(result)
 
-    pool_token = result['created-asset']
+    pool_token = result["created-asset"]
 
     # Deposit to pool
     sp = client.suggested_params()
@@ -73,11 +73,9 @@ def demo():
     print(result)
 
 
-
-
-
 def get_asset_xfer(addr, sp, asset_id, app_addr, amt):
     return AssetTransferTxn(addr, sp, app_addr, amt, asset_id)
+
 
 def get_app_call(addr, sp, app_id):
     return ApplicationCallTxn(addr, sp, app_id, OnComplete.NoOpOC)
