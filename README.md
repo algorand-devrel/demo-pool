@@ -1,6 +1,8 @@
 Example Pool Contract
 ------------------------
 
+**WARNING** DO NOT USE THIS YET IM POSITIVE THE MATH IS WRONG
+
 This example is meant to illustrate how you may construct a contract that acts as a Token Pool.
 
 ## Motivation
