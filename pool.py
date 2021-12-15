@@ -14,12 +14,14 @@ action_admin_init = Bytes("admin_init")
 action_admin_update = Bytes("admin_update")
 
 
-#TODO: is this enough?
+# TODO: is this enough?
 scale = Int(10000)
+
 
 @Subroutine(TealType.uint64)
 def scaleup(n: TealType.uint64) -> Expr:
     return n * scale
+
 
 @Subroutine(TealType.uint64)
 def scaledown(n: TealType.uint64) -> Expr:
@@ -43,7 +45,9 @@ def approval(asset_a: int, asset_b: int):
             abal,
             bbal,
             Assert(And(abal.hasValue(), bbal.hasValue())),
-            App.globalPut(ratio_key, scaleup(abal.value()) / bbal.value()), # Scale up the numerator only
+            App.globalPut(
+                ratio_key, scaleup(abal.value()) / bbal.value()
+            ),  # Scale up the numerator only
         )
 
     @Subroutine(TealType.uint64)
@@ -76,20 +80,20 @@ def approval(asset_a: int, asset_b: int):
             Assert(well_formed_deposit),
             # Init the MaybeValue of global state
             ratio_state,
-
             # Only do this once per block
             update_ratio(),
-
             # TODO allow for margin of error?
             # Assert(Gtxn[2].asset_amount() * ratio.load() == Gtxn[1].asset_amount()),
-
             # Return some number of pool tokens
             InnerTxnBuilder.Begin(),
             InnerTxnBuilder.SetFields(
                 {
                     TxnField.type_enum: TxnType.AssetTransfer,
                     TxnField.xfer_asset: pool_token,
-                    TxnField.asset_amount: (Gtxn[1].asset_amount() / App.globalGet(ratio_key)) + Gtxn[2].asset_amount(),
+                    TxnField.asset_amount: (
+                        Gtxn[1].asset_amount() / App.globalGet(ratio_key)
+                    )
+                    + Gtxn[2].asset_amount(),
                     TxnField.asset_receiver: Txn.accounts[0],
                 }
             ),
@@ -118,9 +122,9 @@ def approval(asset_a: int, asset_b: int):
                 {
                     TxnField.type_enum: TxnType.AssetTransfer,
                     TxnField.xfer_asset: asset_a,
-                    TxnField.asset_amount: Gtxn[1].asset_amount()
+                    TxnField.asset_amount: scaleup(Gtxn[1].asset_amount())
                     / App.globalGet(ratio_key),
-                    TxnField.asset_receiver: Txn.sender(),
+                    TxnField.asset_receiver: Gtxn[1].sender(),
                 }
             ),
             InnerTxnBuilder.Submit(),
@@ -129,9 +133,10 @@ def approval(asset_a: int, asset_b: int):
                 {
                     TxnField.type_enum: TxnType.AssetTransfer,
                     TxnField.xfer_asset: asset_b,
-                    TxnField.asset_amount: Gtxn[1].asset_amount()
-                    / App.globalGet(ratio_key),
-                    TxnField.asset_receiver: Txn.sender(),
+                    TxnField.asset_amount: scaledown(
+                        Gtxn[1].asset_amount() * App.globalGet(ratio_key)
+                    ),
+                    TxnField.asset_receiver: Gtxn[1].sender(),
                 }
             ),
             InnerTxnBuilder.Submit(),
@@ -161,8 +166,9 @@ def approval(asset_a: int, asset_b: int):
                 {
                     TxnField.type_enum: TxnType.AssetTransfer,
                     TxnField.xfer_asset: asset_b,
-                    TxnField.asset_amount: scaleup(Gtxn[1].asset_amount()) / App.globalGet(ratio_key),
-                    TxnField.asset_receiver: Gtxn[1].sender()
+                    TxnField.asset_amount: scaleup(Gtxn[1].asset_amount())
+                    / App.globalGet(ratio_key),
+                    TxnField.asset_receiver: Gtxn[1].sender(),
                 }
             ),
             InnerTxnBuilder.Submit(),
@@ -187,8 +193,10 @@ def approval(asset_a: int, asset_b: int):
                 {
                     TxnField.type_enum: TxnType.AssetTransfer,
                     TxnField.xfer_asset: asset_a,
-                    TxnField.asset_amount: scaledown(Gtxn[1].asset_amount() * App.globalGet(ratio_key)),
-                    TxnField.asset_receiver: Gtxn[1].sender()
+                    TxnField.asset_amount: scaledown(
+                        Gtxn[1].asset_amount() * App.globalGet(ratio_key)
+                    ),
+                    TxnField.asset_receiver: Gtxn[1].sender(),
                 }
             ),
             InnerTxnBuilder.Submit(),
@@ -210,41 +218,46 @@ def approval(asset_a: int, asset_b: int):
     @Subroutine(TealType.uint64)
     def init_pool():
         return If(
-            is_governor(), 
+            is_governor(),
             Seq(
-                create_pool_token(asset_a, asset_b), 
+                create_pool_token(asset_a, asset_b),
                 opt_in(asset_a),
                 opt_in(asset_b),
-                Int(1)
+                Int(1),
             ),
-            Int(0)
+            Int(0),
         )
 
     @Subroutine(TealType.none)
     def opt_in(aid: TealType.uint64):
         return Seq(
             InnerTxnBuilder.Begin(),
-            InnerTxnBuilder.SetFields({
-                TxnField.type_enum: TxnType.AssetTransfer,
-                TxnField.xfer_asset: aid,
-                TxnField.asset_amount: Int(0),
-                TxnField.asset_receiver: Global.current_application_address(),
-            }),
+            InnerTxnBuilder.SetFields(
+                {
+                    TxnField.type_enum: TxnType.AssetTransfer,
+                    TxnField.xfer_asset: aid,
+                    TxnField.asset_amount: Int(0),
+                    TxnField.asset_receiver: Global.current_application_address(),
+                }
+            ),
             InnerTxnBuilder.Submit(),
         )
 
     @Subroutine(TealType.none)
     def create_pool_token(a: TealType.uint64, b: TealType.uint64):
-        una = AssetParam.unitName(a) # TODO: use asset id instead?
-        unb = AssetParam.unitName(b) # TODO: use asset id instead?
+        una = AssetParam.unitName(a)  # TODO: use asset id instead?
+        unb = AssetParam.unitName(b)  # TODO: use asset id instead?
 
         return Seq(
-            una, unb,
+            una,
+            unb,
             InnerTxnBuilder.Begin(),
             InnerTxnBuilder.SetFields(
                 {
                     TxnField.type_enum: TxnType.AssetConfig,
-                    TxnField.config_asset_name: Concat(Bytes("DPT-"), una.value(), Bytes("-"), unb.value()),
+                    TxnField.config_asset_name: Concat(
+                        Bytes("DPT-"), una.value(), Bytes("-"), unb.value()
+                    ),
                     TxnField.config_asset_unit_name: Bytes("dpt"),
                     TxnField.config_asset_total: Int(int(1e9)),
                     TxnField.config_asset_decimals: Int(0),
@@ -280,14 +293,11 @@ def clear():
     return Return(Int(1))
 
 
-
 if __name__ == "__main__":
     path = os.path.dirname(os.path.abspath(__file__))
 
     with open(os.path.join(path, "approval.teal"), "w") as f:
-        f.write(
-            compileTeal(approval(10, 100), mode=Mode.Application, version=5)
-        )
+        f.write(compileTeal(approval(10, 100), mode=Mode.Application, version=5))
 
     with open(os.path.join(path, "clear.teal"), "w") as f:
         f.write(compileTeal(clear(), mode=Mode.Application, version=5))

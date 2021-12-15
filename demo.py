@@ -19,6 +19,7 @@ client = algod.AlgodClient(token, url)
 asset_a = 100
 asset_b = 101
 
+
 def demo(app_id=None, asset_a=None, asset_b=None):
     # Create acct
     addr, sk = get_accounts()[0]
@@ -37,7 +38,6 @@ def demo(app_id=None, asset_a=None, asset_b=None):
         app_id = create_app(addr, sk, asset_a, asset_b)
         print("Created App with id: {}".format(app_id))
 
-
     app_addr = logic.get_application_address(app_id)
     print("Application Address: {}".format(app_addr))
 
@@ -46,7 +46,9 @@ def demo(app_id=None, asset_a=None, asset_b=None):
     # Initialize Pool
     sp = client.suggested_params()
     txn_group = [
-        get_app_call(addr, sp, app_id, app_args=["admin_init"], assets=[asset_a, asset_b]),
+        get_app_call(
+            addr, sp, app_id, app_args=["admin_init"], assets=[asset_a, asset_b]
+        ),
         AssetTransferTxn(addr, sp, app_addr, 1000, asset_a),
         AssetTransferTxn(addr, sp, app_addr, 3000, asset_b),
     ]
@@ -58,14 +60,15 @@ def demo(app_id=None, asset_a=None, asset_b=None):
 
     txid = client.send_transactions(signed_group)
     result = wait_for_confirmation(client, txid, 4)
-
-    pool_token = result['inner-txns'][0]['asset-index']
+    pool_token = result["inner-txns"][0]["asset-index"]
 
     print("Created Pool Token: {}".format(pool_token))
 
     # Opt admin into pool token
     sp = client.suggested_params()
-    txn_group = [get_asset_xfer(addr, sp, pool_token, addr, 0), ]
+    txn_group = [
+        get_asset_xfer(addr, sp, pool_token, addr, 0),
+    ]
     signed_group = [txn.sign(sk) for txn in assign_group_id(txn_group)]
 
     print("Sending grouped transaction for OptIn")
@@ -73,11 +76,18 @@ def demo(app_id=None, asset_a=None, asset_b=None):
     txid = client.send_transactions(signed_group)
     result = wait_for_confirmation(client, txid, 4)
 
+    print_balances(app_addr, addr, pool_token, asset_a, asset_b)
 
     # Deposit to pool
     sp = client.suggested_params()
     txn_group = [
-        get_app_call(addr, sp, app_id, app_args=["deposit"], assets=[asset_a, asset_b, pool_token]),
+        get_app_call(
+            addr,
+            sp,
+            app_id,
+            app_args=["deposit"],
+            assets=[asset_a, asset_b, pool_token],
+        ),
         get_asset_xfer(addr, sp, asset_a, app_addr, 100000),
         get_asset_xfer(addr, sp, asset_b, app_addr, 10000),
     ]
@@ -90,6 +100,8 @@ def demo(app_id=None, asset_a=None, asset_b=None):
 
     txid = client.send_transactions(signed_group)
     result = wait_for_confirmation(client, txid, 4)
+
+    print_balances(app_addr, addr, pool_token, asset_a, asset_b)
 
     # Swap A for B
     sp = client.suggested_params()
@@ -105,6 +117,8 @@ def demo(app_id=None, asset_a=None, asset_b=None):
     txid = client.send_transactions(signed_group)
     result = wait_for_confirmation(client, txid, 4)
 
+    print_balances(app_addr, addr, pool_token, asset_a, asset_b)
+
     # Swap B for A
     sp = client.suggested_params()
     txn_group = [
@@ -118,6 +132,8 @@ def demo(app_id=None, asset_a=None, asset_b=None):
     write_dryrun("swap_b_a", client, signed_group)
     txid = client.send_transactions(signed_group)
     result = wait_for_confirmation(client, txid, 4)
+
+    print_balances(app_addr, addr, pool_token, asset_a, asset_b)
 
     # withdraw from pool
     sp = client.suggested_params()
@@ -134,6 +150,7 @@ def demo(app_id=None, asset_a=None, asset_b=None):
     txid = client.send_transactions(signed_group)
     result = wait_for_confirmation(client, txid, 4)
 
+    print_balances(app_addr, addr, pool_token, asset_a, asset_b)
 
 
 def get_asset_xfer(addr, sp, asset_id, app_addr, amt):
@@ -141,7 +158,16 @@ def get_asset_xfer(addr, sp, asset_id, app_addr, amt):
 
 
 def get_app_call(addr, sp, app_id, app_args=[], assets=[], accounts=[]):
-    return ApplicationCallTxn(addr, sp, app_id, OnComplete.NoOpOC, app_args=app_args, foreign_assets=assets, accounts=accounts)
+    return ApplicationCallTxn(
+        addr,
+        sp,
+        app_id,
+        OnComplete.NoOpOC,
+        app_args=app_args,
+        foreign_assets=assets,
+        accounts=accounts,
+    )
+
 
 def create_asset(addr, pk):
     # Get suggested params from network
@@ -175,7 +201,7 @@ def create_app(addr, pk, a, b):
     sp = client.suggested_params()
     # Create the transaction
     create_txn = ApplicationCreateTxn(
-        addr, sp, 0, app_bytes, clear_bytes,gschema, lschema
+        addr, sp, 0, app_bytes, clear_bytes, gschema, lschema
     )
 
     # Sign it
@@ -195,16 +221,14 @@ def fund_if_needed(client: AlgodClient, funder: str, pk: str, app: str, a: int, 
     fund = False
     try:
         ai = client.account_info(app)
-        fund = ai['amount']<1e7
+        fund = ai["amount"] < 1e7
     except:
         fund = True
 
     if fund:
         # Fund App address
         sp = client.suggested_params()
-        txn_group = [
-            PaymentTxn(funder, sp, app, 10000000)
-        ]
+        txn_group = [PaymentTxn(funder, sp, app, 10000000)]
         signed_group = [txn.sign(pk) for txn in assign_group_id(txn_group)]
 
         txid = client.send_transactions(signed_group)
@@ -212,10 +236,34 @@ def fund_if_needed(client: AlgodClient, funder: str, pk: str, app: str, a: int, 
 
         result = wait_for_confirmation(client, txid, 4)
 
+
 def write_dryrun(name: str, client: AlgodClient, txns: List[SignedTransaction]):
-    with open("dryruns/"+name + ".msgp", "wb") as f:
-        drr = create_dryrun(client,txns)
+    with open("dryruns/" + name + ".msgp", "wb") as f:
+        drr = create_dryrun(client, txns)
         f.write(base64.b64decode(encoding.msgpack_encode(drr)))
+
+
+def print_balances(app: str, addr: str, pool: int, a: int, b: int):
+    appbal = client.account_info(app)
+    print("App: ")
+    for asset in appbal["assets"]:
+        if asset["asset-id"] == pool:
+            print("\tPool Balance {}".format(asset["amount"]))
+        if asset["asset-id"] == a:
+            print("\tAssetA Balance {}".format(asset["amount"]))
+        if asset["asset-id"] == b:
+            print("\tAssetB Balance {}".format(asset["amount"]))
+
+    addrbal = client.account_info(addr)
+    print("Participant: ")
+    for asset in addrbal["assets"]:
+        if asset["asset-id"] == pool:
+            print("\tPool Balance {}".format(asset["amount"]))
+        if asset["asset-id"] == a:
+            print("\tAssetA Balance {}".format(asset["amount"]))
+        if asset["asset-id"] == b:
+            print("\tAssetB Balance {}".format(asset["amount"]))
+
 
 if __name__ == "__main__":
     demo()
