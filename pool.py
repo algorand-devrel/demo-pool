@@ -6,7 +6,8 @@ gov_key = Bytes("gov")
 pool_key = Bytes("p")
 ratio_key = Bytes("rab")
 
-action_init = Bytes("init")
+action_boot = Bytes("boot")
+action_fund = Bytes("fund")
 action_mint = Bytes("mint")
 action_burn = Bytes("burn")
 action_swap = Bytes("swap")
@@ -147,13 +148,14 @@ def approval(asset_a: int, asset_b: int):
             a_bal,
             b_bal,
             Assert(well_formed_burn),
+            Assert(And(pool_bal.hasValue(), a_bal.hasValue(), b_bal.hasValue())),
             InnerTxnBuilder.Begin(),
             InnerTxnBuilder.SetFields(
                 {
                     TxnField.type_enum: TxnType.AssetTransfer,
                     TxnField.xfer_asset: asset_a,
                     TxnField.asset_amount: burn_tokens(
-                        pool_bal.value() - total_supply,
+                        total_supply - pool_bal.value(),
                         a_bal.value(),
                         Gtxn[1].asset_amount(),
                     ),
@@ -167,7 +169,7 @@ def approval(asset_a: int, asset_b: int):
                     TxnField.type_enum: TxnType.AssetTransfer,
                     TxnField.xfer_asset: asset_b,
                     TxnField.asset_amount: burn_tokens(
-                        pool_bal.value() - total_supply,
+                        total_supply - pool_bal.value(),
                         b_bal.value(),
                         Gtxn[1].asset_amount(),
                     ),
@@ -231,16 +233,49 @@ def approval(asset_a: int, asset_b: int):
         return If(is_governor(), Seq(App.globalPut(gov_key, new_gov), Int(1)), Int(0))
 
     @Subroutine(TealType.uint64)
-    def init_pool():
-        return If(
-            is_governor(),
-            Seq(
-                create_pool_token(asset_a, asset_b),
-                opt_in(asset_a),
-                opt_in(asset_b),
-                Int(1),
-            ),
-            Int(0),
+    def bootstrap():
+        well_formed_bootstrap = And(
+            Global.group_size() == Int(1),
+            Gtxn[0].type_enum() == TxnType.ApplicationCall,
+            is_correct_assets,
+        )
+
+        return Seq(
+            Assert(well_formed_bootstrap),
+            Assert(is_governor()),
+
+            create_pool_token(asset_a, asset_b),
+            opt_in(asset_a),
+            opt_in(asset_b),
+            Int(1)
+        )
+
+    @Subroutine(TealType.uint64)
+    def fund():
+        well_formed_fund = And(
+            Global.group_size() == Int(3),
+
+            Gtxn[0].type_enum() == TxnType.ApplicationCall,
+            is_correct_assets,
+
+            Gtxn[1].type_enum() == TxnType.AssetTransfer,
+            Gtxn[1].xfer_asset() == asset_a,
+
+            Gtxn[2].type_enum() == TxnType.AssetTransfer,
+            Gtxn[2].xfer_asset() == asset_b
+        )
+
+        return Seq(
+            Assert(well_formed_fund),
+            InnerTxnBuilder.Begin(),
+            InnerTxnBuilder.SetFields({
+                TxnField.type_enum : TxnType.AssetTransfer,
+                TxnField.xfer_asset: App.globalGet(pool_key),
+                TxnField.asset_amount: Sqrt(Gtxn[1].asset_amount()*Gtxn[2].asset_amount()) - scale ,
+                TxnField.asset_receiver: Gtxn[0].sender()
+            }),
+            InnerTxnBuilder.Submit(),
+            Int(1)
         )
 
     @Subroutine(TealType.none)
@@ -290,7 +325,8 @@ def approval(asset_a: int, asset_b: int):
         [Txn.application_args[0] == action_burn, burn()],
         [Txn.application_args[0] == action_swap, swap()],
         # Admin
-        [Txn.application_args[0] == action_init, init_pool()],
+        [Txn.application_args[0] == action_boot, bootstrap()],
+        [Txn.application_args[0] == action_fund, fund()],
         [Txn.application_args[0] == action_update, set_governor(Txn.accounts[1])],
     )
 

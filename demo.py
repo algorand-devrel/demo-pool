@@ -43,20 +43,18 @@ def demo(app_id=None, asset_a=None, asset_b=None):
 
     fund_if_needed(client, addr, sk, app_addr, asset_a, asset_b)
 
-    # Initialize Pool
+    # Bootstrap Pool
     sp = client.suggested_params()
     txn_group = [
         get_app_call(
-            addr, sp, app_id, app_args=["init"], assets=[asset_a, asset_b]
+            addr, sp, app_id, app_args=["boot"], assets=[asset_a, asset_b]
         ),
-        AssetTransferTxn(addr, sp, app_addr, 1000, asset_a),
-        AssetTransferTxn(addr, sp, app_addr, 3000, asset_b),
     ]
     signed_group = [txn.sign(sk) for txn in assign_group_id(txn_group)]
 
-    print("Sending transaction for init")
+    print("Sending transaction for boot")
 
-    write_dryrun("init", client, signed_group)
+    write_dryrun("boot", client, signed_group)
 
     txid = client.send_transactions(signed_group)
     result = wait_for_confirmation(client, txid, 4)
@@ -77,6 +75,25 @@ def demo(app_id=None, asset_a=None, asset_b=None):
     result = wait_for_confirmation(client, txid, 4)
 
     print_balances(app_addr, addr, pool_token, asset_a, asset_b)
+
+    # Fund Pool
+    sp = client.suggested_params()
+    txn_group = [
+        get_app_call(
+            addr, sp, app_id, app_args=["fund"], assets=[asset_a, asset_b, pool_token]
+        ),
+        AssetTransferTxn(addr, sp, app_addr, 1000, asset_a),
+        AssetTransferTxn(addr, sp, app_addr, 3000, asset_b),
+    ]
+    signed_group = [txn.sign(sk) for txn in assign_group_id(txn_group)]
+
+    print("Sending transaction for fund")
+
+    write_dryrun("fund", client, signed_group)
+
+    txid = client.send_transactions(signed_group)
+    result = wait_for_confirmation(client, txid, 4)
+
 
     # Mint liq tokens
     sp = client.suggested_params()
@@ -232,7 +249,7 @@ def fund_if_needed(client: AlgodClient, funder: str, pk: str, app: str, a: int, 
         signed_group = [txn.sign(pk) for txn in assign_group_id(txn_group)]
 
         txid = client.send_transactions(signed_group)
-        print("Sending transaction for init: {}".format(txid))
+        print("Sending transaction for boot: {}".format(txid))
 
         result = wait_for_confirmation(client, txid, 4)
 
