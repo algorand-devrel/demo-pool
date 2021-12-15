@@ -48,19 +48,19 @@ bnz main_l13
 err
 main_l13:
 txna Accounts 1
-callsub sub7
-b main_l23
-main_l14:
 callsub sub8
 b main_l23
+main_l14:
+callsub sub9
+b main_l23
 main_l15:
-callsub sub3
+callsub sub4
 b main_l23
 main_l16:
-callsub sub2
+callsub sub3
 b main_l23
 main_l17:
-callsub sub1
+callsub sub2
 b main_l23
 main_l18:
 int 0
@@ -69,23 +69,29 @@ main_l19:
 int 1
 b main_l23
 main_l20:
-callsub sub6
+callsub sub7
 b main_l23
 main_l21:
-callsub sub6
+callsub sub7
 b main_l23
 main_l22:
 int 1
 main_l23:
 return
-sub0: // update_ratio
+sub0: // scaleup
+store 7
+load 7
+int 10000
+*
+retsub
+sub1: // update_ratio
 global CurrentApplicationAddress
 int 10
 asset_holding_get AssetBalance
 store 3
 store 4
 global CurrentApplicationAddress
-int 10
+int 100
 asset_holding_get AssetBalance
 store 5
 store 6
@@ -95,13 +101,16 @@ load 5
 assert
 byte "rab"
 load 4
+callsub sub0
 load 6
 /
 app_global_put
-byte "rab"
-app_global_get
+load 4
+callsub sub0
+load 6
+/
 retsub
-sub1: // deposit
+sub2: // deposit
 global GroupSize
 int 3
 ==
@@ -164,19 +173,13 @@ app_global_get_ex
 store 1
 store 2
 load 1
-bnz sub1_l2
-callsub sub0
-b sub1_l3
-sub1_l2:
+bnz sub2_l2
+callsub sub1
+b sub2_l3
+sub2_l2:
 load 2
-sub1_l3:
+sub2_l3:
 store 0
-gtxn 2 AssetAmount
-load 0
-*
-gtxn 1 AssetAmount
-==
-assert
 itxn_begin
 int axfer
 itxn_field TypeEnum
@@ -190,11 +193,11 @@ gtxn 2 AssetAmount
 +
 itxn_field AssetAmount
 txna Accounts 0
-itxn_field Receiver
+itxn_field AssetReceiver
 itxn_submit
 int 1
 retsub
-sub2: // withdraw
+sub3: // withdraw
 global GroupSize
 int 2
 ==
@@ -252,18 +255,18 @@ itxn_field AssetReceiver
 itxn_submit
 int 1
 retsub
-sub3: // swap
+sub4: // swap
 txna Assets 0
 txna Assets 1
 >
-bnz sub3_l2
+bnz sub4_l2
+callsub sub6
+b sub4_l3
+sub4_l2:
 callsub sub5
-b sub3_l3
-sub3_l2:
-callsub sub4
-sub3_l3:
+sub4_l3:
 retsub
-sub4: // swapAB
+sub5: // swapAB
 global GroupSize
 int 2
 ==
@@ -305,7 +308,7 @@ itxn_field AssetAmount
 itxn_submit
 int 1
 retsub
-sub5: // swapBA
+sub6: // swapBA
 global GroupSize
 int 2
 ==
@@ -347,49 +350,85 @@ itxn_field AssetAmount
 itxn_submit
 int 1
 retsub
-sub6: // is_governor
+sub7: // is_governor
 int 0
 byte "gov"
 app_global_get_ex
-store 7
 store 8
-txn Sender
-load 7
-bnz sub6_l2
-global CreatorAddress
-b sub6_l3
-sub6_l2:
-load 8
-sub6_l3:
-==
-retsub
-sub7: // set_governor
 store 9
-callsub sub6
+txn Sender
+load 8
 bnz sub7_l2
-int 0
+global CreatorAddress
 b sub7_l3
 sub7_l2:
-byte "gov"
 load 9
-app_global_put
-int 1
 sub7_l3:
+==
 retsub
-sub8: // init_pool
-callsub sub6
+sub8: // set_governor
+store 10
+callsub sub7
 bnz sub8_l2
 int 0
 b sub8_l3
 sub8_l2:
-callsub sub9
+byte "gov"
+load 10
+app_global_put
+int 1
 sub8_l3:
 retsub
-sub9: // create_pool_token
+sub9: // init_pool
+callsub sub7
+bnz sub9_l2
+int 0
+b sub9_l3
+sub9_l2:
+int 10
+int 100
+callsub sub11
+int 10
+callsub sub10
+int 100
+callsub sub10
+int 1
+sub9_l3:
+retsub
+sub10: // opt_in
+store 11
+itxn_begin
+int axfer
+itxn_field TypeEnum
+load 11
+itxn_field XferAsset
+int 0
+itxn_field AssetAmount
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+itxn_submit
+retsub
+sub11: // create_pool_token
+store 13
+store 12
+load 12
+asset_params_get AssetUnitName
+store 14
+store 15
+load 13
+asset_params_get AssetUnitName
+store 16
+store 17
 itxn_begin
 int acfg
 itxn_field TypeEnum
-byte "DemoPoolToken"
+byte "DPT-"
+load 15
+concat
+byte "-"
+concat
+load 17
+concat
 itxn_field ConfigAssetName
 byte "dpt"
 itxn_field ConfigAssetUnitName
@@ -403,7 +442,6 @@ global CurrentApplicationAddress
 itxn_field ConfigAssetReserve
 itxn_submit
 byte "p"
-txn CreatedAssetID
+itxn CreatedAssetID
 app_global_put
-int 1
 retsub

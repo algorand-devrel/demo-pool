@@ -3,11 +3,7 @@ from pyteal import *
 
 
 gov_key = Bytes("gov")
-
-asset_a_key = Bytes("a")
-asset_b_key = Bytes("b")
-asset_pool_key = Bytes("p")
-
+pool_key = Bytes("p")
 ratio_key = Bytes("rab")
 
 action_deposit = Bytes("deposit")
@@ -18,22 +14,37 @@ action_admin_init = Bytes("admin_init")
 action_admin_update = Bytes("admin_update")
 
 
-def approval(asset_a: TealType.uint64, asset_b: TealType.uint64):
+#TODO: is this enough?
+scale = Int(10000)
+
+@Subroutine(TealType.uint64)
+def scaleup(n: TealType.uint64) -> Expr:
+    return n * scale
+
+@Subroutine(TealType.uint64)
+def scaledown(n: TealType.uint64) -> Expr:
+    return n / scale
+
+
+def approval(asset_a: int, asset_b: int):
     # Don't allow this contract to be created if a > b
     assert asset_a < asset_b
+
+    asset_a = Int(asset_a)
+    asset_b = Int(asset_b)
 
     is_correct_assets = And(Txn.assets[0] == asset_a, Txn.assets[1] == asset_b)
 
     @Subroutine(TealType.uint64)
     def update_ratio():
         abal = AssetHolding.balance(Global.current_application_address(), asset_a)
-        bbal = AssetHolding.balance(Global.current_application_address(), asset_a)
+        bbal = AssetHolding.balance(Global.current_application_address(), asset_b)
         return Seq(
             abal,
             bbal,
             Assert(And(abal.hasValue(), bbal.hasValue())),
-            App.globalPut(ratio_key, abal.value() / bbal.value()),
-            App.globalGet(ratio_key),
+            App.globalPut(ratio_key, scaleup(abal.value()) / bbal.value()), # Scale up the numerator 
+            scaleup(abal.value()) / bbal.value()
         )
 
     @Subroutine(TealType.uint64)
@@ -59,28 +70,30 @@ def approval(asset_a: TealType.uint64, asset_b: TealType.uint64):
             Gtxn[1].sender() == Gtxn[2].sender(),
         )
 
-        pool_token = App.globalGet(asset_pool_key)
+        pool_token = App.globalGet(pool_key)
 
         return Seq(
             # Check that the transaction is constructed correctly
             Assert(well_formed_deposit),
             # Init the MaybeValue of global state
             ratio_state,
+
             # If we already have a ratio for this, use it. Otherwise, set the ratio based on the deposit
             ratio.store(
                 If(ratio_state.hasValue(), ratio_state.value(), update_ratio())
             ),
+
             # TODO allow for margin of error?
-            Assert(Gtxn[2].asset_amount() * ratio.load() == Gtxn[1].asset_amount()),
+            #Assert(Gtxn[2].asset_amount() * ratio.load() == Gtxn[1].asset_amount()),
+
             # Return some number of pool tokens
             InnerTxnBuilder.Begin(),
             InnerTxnBuilder.SetFields(
                 {
                     TxnField.type_enum: TxnType.AssetTransfer,
                     TxnField.xfer_asset: pool_token,
-                    TxnField.asset_amount: (Gtxn[1].asset_amount() / ratio.load())
-                    + Gtxn[2].asset_amount(),
-                    TxnField.receiver: Txn.accounts[0],
+                    TxnField.asset_amount: (Gtxn[1].asset_amount() / ratio.load()) + Gtxn[2].asset_amount(),
+                    TxnField.asset_receiver: Txn.accounts[0],
                 }
             ),
             InnerTxnBuilder.Submit(),
@@ -89,7 +102,7 @@ def approval(asset_a: TealType.uint64, asset_b: TealType.uint64):
 
     @Subroutine(TealType.uint64)
     def withdraw():
-        pool_token = App.globalGet(asset_pool_key)
+        pool_token = App.globalGet(pool_key)
 
         well_formed_withdrawl = And(
             Global.group_size() == Int(2),  # App call, Pool Token xfer
@@ -131,7 +144,7 @@ def approval(asset_a: TealType.uint64, asset_b: TealType.uint64):
     @Subroutine(TealType.uint64)
     def swap():
         # A index is strictly < B index
-        return If(Txn.assets[0] > Txn.assets[1], swapAB(), swapBA())
+        return If(Gtxn[1].xfer_asset() == asset_a, swapAB(), swapBA())
 
     @Subroutine(TealType.uint64)
     def swapAB():
@@ -151,8 +164,7 @@ def approval(asset_a: TealType.uint64, asset_b: TealType.uint64):
                 {
                     TxnField.type_enum: TxnType.AssetTransfer,
                     TxnField.xfer_asset: asset_b,
-                    TxnField.asset_amount: Gtxn[1].asset_amount()
-                    / App.globalGet(ratio_key),
+                    TxnField.asset_amount: Gtxn[1].asset_amount() / App.globalGet(ratio_key),
                 }
             ),
             InnerTxnBuilder.Submit(),
@@ -177,8 +189,8 @@ def approval(asset_a: TealType.uint64, asset_b: TealType.uint64):
                 {
                     TxnField.type_enum: TxnType.AssetTransfer,
                     TxnField.xfer_asset: asset_a,
-                    TxnField.asset_amount: Gtxn[1].asset_amount()
-                    * App.globalGet(ratio_key),
+                    TxnField.asset_amount: scaledown(Gtxn[1].asset_amount() * App.globalGet(ratio_key)),
+                    TxnField.asset_receiver: Gtxn[1].sender()
                 }
             ),
             InnerTxnBuilder.Submit(),
@@ -199,18 +211,42 @@ def approval(asset_a: TealType.uint64, asset_b: TealType.uint64):
 
     @Subroutine(TealType.uint64)
     def init_pool():
-        return If(is_governor(), create_pool_token(), Int(0))
+        return If(
+            is_governor(), 
+            Seq(
+                create_pool_token(asset_a, asset_b), 
+                opt_in(asset_a),
+                opt_in(asset_b),
+                Int(1)
+            ),
+            Int(0)
+        )
 
-    @Subroutine(TealType.uint64)
-    def create_pool_token():
+    @Subroutine(TealType.none)
+    def opt_in(aid: TealType.uint64):
         return Seq(
+            InnerTxnBuilder.Begin(),
+            InnerTxnBuilder.SetFields({
+                TxnField.type_enum: TxnType.AssetTransfer,
+                TxnField.xfer_asset: aid,
+                TxnField.asset_amount: Int(0),
+                TxnField.asset_receiver: Global.current_application_address(),
+            }),
+            InnerTxnBuilder.Submit(),
+        )
+
+    @Subroutine(TealType.none)
+    def create_pool_token(a: TealType.uint64, b: TealType.uint64):
+        una = AssetParam.unitName(a) # TODO: use asset id instead?
+        unb = AssetParam.unitName(b) # TODO: use asset id instead?
+
+        return Seq(
+            una, unb,
             InnerTxnBuilder.Begin(),
             InnerTxnBuilder.SetFields(
                 {
                     TxnField.type_enum: TxnType.AssetConfig,
-                    TxnField.config_asset_name: Bytes(
-                        "DemoPoolToken"
-                    ),  # TODO: add specific asset references in name?
+                    TxnField.config_asset_name: Concat(Bytes("DPT-"), una.value(), Bytes("-"), unb.value()),
                     TxnField.config_asset_unit_name: Bytes("dpt"),
                     TxnField.config_asset_total: Int(int(1e9)),
                     TxnField.config_asset_decimals: Int(0),
@@ -219,8 +255,7 @@ def approval(asset_a: TealType.uint64, asset_b: TealType.uint64):
                 }
             ),
             InnerTxnBuilder.Submit(),
-            App.globalPut(asset_pool_key, Txn.created_asset_id()),
-            Int(1),
+            App.globalPut(pool_key, InnerTxn.created_asset_id()),
         )
 
     router = Cond(
@@ -247,12 +282,13 @@ def clear():
     return Return(Int(1))
 
 
+
 if __name__ == "__main__":
     path = os.path.dirname(os.path.abspath(__file__))
 
     with open(os.path.join(path, "approval.teal"), "w") as f:
         f.write(
-            compileTeal(approval(Int(10), Int(100)), mode=Mode.Application, version=5)
+            compileTeal(approval(10, 100), mode=Mode.Application, version=5)
         )
 
     with open(os.path.join(path, "clear.teal"), "w") as f:
