@@ -35,7 +35,7 @@ def approval(asset_a: int, asset_b: int):
 
     is_correct_assets = And(Txn.assets[0] == asset_a, Txn.assets[1] == asset_b)
 
-    @Subroutine(TealType.uint64)
+    @Subroutine(TealType.none)
     def update_ratio():
         abal = AssetHolding.balance(Global.current_application_address(), asset_a)
         bbal = AssetHolding.balance(Global.current_application_address(), asset_b)
@@ -43,8 +43,7 @@ def approval(asset_a: int, asset_b: int):
             abal,
             bbal,
             Assert(And(abal.hasValue(), bbal.hasValue())),
-            App.globalPut(ratio_key, scaleup(abal.value()) / bbal.value()), # Scale up the numerator 
-            scaleup(abal.value()) / bbal.value()
+            App.globalPut(ratio_key, scaleup(abal.value()) / bbal.value()), # Scale up the numerator only
         )
 
     @Subroutine(TealType.uint64)
@@ -78,13 +77,11 @@ def approval(asset_a: int, asset_b: int):
             # Init the MaybeValue of global state
             ratio_state,
 
-            # If we already have a ratio for this, use it. Otherwise, set the ratio based on the deposit
-            ratio.store(
-                If(ratio_state.hasValue(), ratio_state.value(), update_ratio())
-            ),
+            # Only do this once per block
+            update_ratio(),
 
             # TODO allow for margin of error?
-            #Assert(Gtxn[2].asset_amount() * ratio.load() == Gtxn[1].asset_amount()),
+            # Assert(Gtxn[2].asset_amount() * ratio.load() == Gtxn[1].asset_amount()),
 
             # Return some number of pool tokens
             InnerTxnBuilder.Begin(),
@@ -92,7 +89,7 @@ def approval(asset_a: int, asset_b: int):
                 {
                     TxnField.type_enum: TxnType.AssetTransfer,
                     TxnField.xfer_asset: pool_token,
-                    TxnField.asset_amount: (Gtxn[1].asset_amount() / ratio.load()) + Gtxn[2].asset_amount(),
+                    TxnField.asset_amount: (Gtxn[1].asset_amount() / App.globalGet(ratio_key)) + Gtxn[2].asset_amount(),
                     TxnField.asset_receiver: Txn.accounts[0],
                 }
             ),
@@ -164,7 +161,8 @@ def approval(asset_a: int, asset_b: int):
                 {
                     TxnField.type_enum: TxnType.AssetTransfer,
                     TxnField.xfer_asset: asset_b,
-                    TxnField.asset_amount: Gtxn[1].asset_amount() / App.globalGet(ratio_key),
+                    TxnField.asset_amount: scaleup(Gtxn[1].asset_amount()) / App.globalGet(ratio_key),
+                    TxnField.asset_receiver: Gtxn[1].sender()
                 }
             ),
             InnerTxnBuilder.Submit(),
