@@ -27,10 +27,30 @@ A Pool Token is created to represent the liquidity providers share of the pool.
 
 The smart contract logic contains several operations:
 
-*Deposit*   - A Liquidity Provider sends some number of the A and B in a given ratio, recieves some number of Pool Tokens
+*Mint*   - A Liquidity Provider sends some number of the A and B in a given ratio, recieves some number of Pool Tokens
 
-*Withdraw*  - A Liquidity Provider sends some number of tokens in a given ratio to 
+*Burn*  - A Liquidity Provider sends some number of tokens in a given ratio to 
 
 *Swap*      - A user sends some amount of asset A or B to swap for the other Asset in the pair and receives the other asset according to the current Ratio
 
+scale = 1000
+fee = 3
+
+bootstrap:
+    create token
+    opt in
+    initial liq token out = sqrt(amtA*amtB) - scale
+
+Mint:
+    liq token out = min(
+        (assetA amt /assetA supply ) * issued_tokens
+        (assetB amt /assetB supply) * issued_tokens
+    )
+
+Burn:
+    assetA_out = assetA_supply * (burn_amount / issued_liquidity_tokens)
+    assetB_out = assetB_supply * (burn_amount / issued_liquidity_tokens)
+
+Swap (Fixed only):
+    amount_out = (asset_in_amount * (scale-fee) * output_supply) / ((input_supply * scale) + (asset_in_amount * (scale-fee)))
 

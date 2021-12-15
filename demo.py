@@ -47,7 +47,7 @@ def demo(app_id=None, asset_a=None, asset_b=None):
     sp = client.suggested_params()
     txn_group = [
         get_app_call(
-            addr, sp, app_id, app_args=["admin_init"], assets=[asset_a, asset_b]
+            addr, sp, app_id, app_args=["init"], assets=[asset_a, asset_b]
         ),
         AssetTransferTxn(addr, sp, app_addr, 1000, asset_a),
         AssetTransferTxn(addr, sp, app_addr, 3000, asset_b),
@@ -78,14 +78,14 @@ def demo(app_id=None, asset_a=None, asset_b=None):
 
     print_balances(app_addr, addr, pool_token, asset_a, asset_b)
 
-    # Deposit to pool
+    # Mint liq tokens
     sp = client.suggested_params()
     txn_group = [
         get_app_call(
             addr,
             sp,
             app_id,
-            app_args=["deposit"],
+            app_args=["mint"],
             assets=[asset_a, asset_b, pool_token],
         ),
         get_asset_xfer(addr, sp, asset_a, app_addr, 100000),
@@ -94,9 +94,9 @@ def demo(app_id=None, asset_a=None, asset_b=None):
 
     signed_group = [txn.sign(sk) for txn in assign_group_id(txn_group)]
 
-    print("Sending grouped transaction for deposit")
+    print("Sending grouped transaction for mint")
 
-    write_dryrun("deposit", client, signed_group)
+    write_dryrun("mint", client, signed_group)
 
     txid = client.send_transactions(signed_group)
     result = wait_for_confirmation(client, txid, 4)
@@ -135,18 +135,18 @@ def demo(app_id=None, asset_a=None, asset_b=None):
 
     print_balances(app_addr, addr, pool_token, asset_a, asset_b)
 
-    # withdraw from pool
+    # Burn liq tokens
     sp = client.suggested_params()
     txn_group = [
-        get_app_call(addr, sp, app_id, ["withdraw"], [asset_a, asset_b, pool_token]),
+        get_app_call(addr, sp, app_id, ["burn"], [asset_a, asset_b, pool_token]),
         get_asset_xfer(addr, sp, pool_token, app_addr, 1000),
     ]
 
     signed_group = [txn.sign(sk) for txn in assign_group_id(txn_group)]
 
-    print("Sending grouped transaction for withdraw")
+    print("Sending grouped transaction for burn")
 
-    write_dryrun("withdraw", client, signed_group)
+    write_dryrun("burn", client, signed_group)
     txid = client.send_transactions(signed_group)
     result = wait_for_confirmation(client, txid, 4)
 

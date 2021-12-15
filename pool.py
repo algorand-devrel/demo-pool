@@ -6,16 +6,31 @@ gov_key = Bytes("gov")
 pool_key = Bytes("p")
 ratio_key = Bytes("rab")
 
-action_deposit = Bytes("deposit")
-action_withdraw = Bytes("withdraw")
+action_init = Bytes("init")
+action_mint = Bytes("mint")
+action_burn = Bytes("burn")
 action_swap = Bytes("swap")
+action_update = Bytes("update")
 
-action_admin_init = Bytes("admin_init")
-action_admin_update = Bytes("admin_update")
+fee = Int(5)
+total_supply = Int(int(1e10))
+scale = Int(1000)
 
 
-# TODO: is this enough?
-scale = Int(10000)
+@Subroutine(TealType.uint64)
+def mint_tokens(issued, asup, bsup, aamt, bamt):
+    return If((aamt / asup) < (bamt / bsup), aamt / asup, bamt / bsup) * issued
+
+
+@Subroutine(TealType.uint64)
+def burn_tokens(issued, sup, amt):
+    return sup * (amt / issued)
+
+
+@Subroutine(TealType.uint64)
+def swap_tokens(inamt, insup, outsup):
+    factor = scale - fee
+    return (inamt * factor * outsup) / ((insup * scale) + (inamt * factor))
 
 
 @Subroutine(TealType.uint64)
@@ -51,13 +66,10 @@ def approval(asset_a: int, asset_b: int):
         )
 
     @Subroutine(TealType.uint64)
-    def deposit():
+    def mint():
         ratio = ScratchVar()
 
-        # Use globalGetEx with 0 as current app, since we dont know if this is set yet
-        ratio_state = App.globalGetEx(Int(0), ratio_key)
-
-        well_formed_deposit = And(
+        well_formed_mint = And(
             Global.group_size() == Int(3),  # App call, Asset A, Asset B
             is_correct_assets,
             Gtxn[0].type_enum() == TxnType.ApplicationCall,
@@ -75,25 +87,33 @@ def approval(asset_a: int, asset_b: int):
 
         pool_token = App.globalGet(pool_key)
 
+        pool_bal = AssetHolding.balance(
+            Global.current_application_address(), pool_token
+        )
+        a_bal = AssetHolding.balance(Global.current_application_address(), asset_a)
+        b_bal = AssetHolding.balance(Global.current_application_address(), asset_b)
+
         return Seq(
+            # Init MaybeValues
+            pool_bal,
+            a_bal,
+            b_bal,
             # Check that the transaction is constructed correctly
-            Assert(well_formed_deposit),
-            # Init the MaybeValue of global state
-            ratio_state,
-            # Only do this once per block
-            update_ratio(),
-            # TODO allow for margin of error?
-            # Assert(Gtxn[2].asset_amount() * ratio.load() == Gtxn[1].asset_amount()),
-            # Return some number of pool tokens
+            Assert(well_formed_mint),
+            # Check that we have these things
+            Assert(And(pool_bal.hasValue(), a_bal.hasValue(), b_bal.hasValue())),
             InnerTxnBuilder.Begin(),
             InnerTxnBuilder.SetFields(
                 {
                     TxnField.type_enum: TxnType.AssetTransfer,
                     TxnField.xfer_asset: pool_token,
-                    TxnField.asset_amount: (
-                        Gtxn[1].asset_amount() / App.globalGet(ratio_key)
-                    )
-                    + Gtxn[2].asset_amount(),
+                    TxnField.asset_amount: mint_tokens(
+                        total_supply - pool_bal.value(),
+                        a_bal.value(),
+                        b_bal.value(),
+                        Gtxn[1].asset_amount(),
+                        Gtxn[2].asset_amount(),
+                    ),
                     TxnField.asset_receiver: Txn.accounts[0],
                 }
             ),
@@ -102,10 +122,11 @@ def approval(asset_a: int, asset_b: int):
         )
 
     @Subroutine(TealType.uint64)
-    def withdraw():
+    def burn():
+
         pool_token = App.globalGet(pool_key)
 
-        well_formed_withdrawl = And(
+        well_formed_burn = And(
             Global.group_size() == Int(2),  # App call, Pool Token xfer
             is_correct_assets,  # Must have the tokens
             Gtxn[0].type_enum() == TxnType.ApplicationCall,
@@ -114,16 +135,28 @@ def approval(asset_a: int, asset_b: int):
             Gtxn[1].xfer_asset() == pool_token,
         )
 
+        pool_bal = AssetHolding.balance(
+            Global.current_application_address(), pool_token
+        )
+        a_bal = AssetHolding.balance(Global.current_application_address(), asset_a)
+        b_bal = AssetHolding.balance(Global.current_application_address(), asset_b)
+
         # Return N*ratioA A tokens and N*ratiob B tokens
         return Seq(
-            Assert(well_formed_withdrawl),
+            pool_bal,
+            a_bal,
+            b_bal,
+            Assert(well_formed_burn),
             InnerTxnBuilder.Begin(),
             InnerTxnBuilder.SetFields(
                 {
                     TxnField.type_enum: TxnType.AssetTransfer,
                     TxnField.xfer_asset: asset_a,
-                    TxnField.asset_amount: scaleup(Gtxn[1].asset_amount())
-                    / App.globalGet(ratio_key),
+                    TxnField.asset_amount: burn_tokens(
+                        pool_bal.value() - total_supply,
+                        a_bal.value(),
+                        Gtxn[1].asset_amount(),
+                    ),
                     TxnField.asset_receiver: Gtxn[1].sender(),
                 }
             ),
@@ -133,8 +166,10 @@ def approval(asset_a: int, asset_b: int):
                 {
                     TxnField.type_enum: TxnType.AssetTransfer,
                     TxnField.xfer_asset: asset_b,
-                    TxnField.asset_amount: scaledown(
-                        Gtxn[1].asset_amount() * App.globalGet(ratio_key)
+                    TxnField.asset_amount: burn_tokens(
+                        pool_bal.value() - total_supply,
+                        b_bal.value(),
+                        Gtxn[1].asset_amount(),
                     ),
                     TxnField.asset_receiver: Gtxn[1].sender(),
                 }
@@ -145,56 +180,36 @@ def approval(asset_a: int, asset_b: int):
 
     @Subroutine(TealType.uint64)
     def swap():
-        # A index is strictly < B index
-        return If(Gtxn[1].xfer_asset() == asset_a, swapAB(), swapBA())
 
-    @Subroutine(TealType.uint64)
-    def swapAB():
+        in_id = Gtxn[1].xfer_asset()
+        out_id = If(Gtxn[1].xfer_asset() == asset_a, asset_b, asset_a)
+
         well_formed_swap = And(
             Global.group_size() == Int(2),
             is_correct_assets,
             Gtxn[0].type_enum() == TxnType.ApplicationCall,
             Gtxn[1].type_enum() == TxnType.AssetTransfer,
-            Gtxn[1].xfer_asset() == asset_a,
+            Or(in_id == asset_a, in_id == asset_b),
             Gtxn[1].asset_amount() > Int(0),
         )
 
+        in_sup = AssetHolding.balance(Global.current_application_address(), in_id)
+        out_sup = AssetHolding.balance(Global.current_application_address(), out_id)
+
         return Seq(
+            in_sup, out_sup,
+
             Assert(well_formed_swap),
+
+            Assert(And(in_sup.hasValue(), out_sup.hasValue())),
+
             InnerTxnBuilder.Begin(),
             InnerTxnBuilder.SetFields(
                 {
                     TxnField.type_enum: TxnType.AssetTransfer,
                     TxnField.xfer_asset: asset_b,
-                    TxnField.asset_amount: scaleup(Gtxn[1].asset_amount())
-                    / App.globalGet(ratio_key),
-                    TxnField.asset_receiver: Gtxn[1].sender(),
-                }
-            ),
-            InnerTxnBuilder.Submit(),
-            Int(1),
-        )
-
-    @Subroutine(TealType.uint64)
-    def swapBA():
-        well_formed_swap = And(
-            Global.group_size() == Int(2),
-            is_correct_assets,
-            Gtxn[0].type_enum() == TxnType.ApplicationCall,
-            Gtxn[1].type_enum() == TxnType.AssetTransfer,
-            Gtxn[1].xfer_asset() == asset_b,
-            Gtxn[1].asset_amount() > Int(0),
-        )
-
-        return Seq(
-            Assert(well_formed_swap),
-            InnerTxnBuilder.Begin(),
-            InnerTxnBuilder.SetFields(
-                {
-                    TxnField.type_enum: TxnType.AssetTransfer,
-                    TxnField.xfer_asset: asset_a,
-                    TxnField.asset_amount: scaledown(
-                        Gtxn[1].asset_amount() * App.globalGet(ratio_key)
+                    TxnField.asset_amount: swap_tokens(
+                        Gtxn[1].asset_amount(), in_sup.value(), out_sup.value()
                     ),
                     TxnField.asset_receiver: Gtxn[1].sender(),
                 }
@@ -259,8 +274,8 @@ def approval(asset_a: int, asset_b: int):
                         Bytes("DPT-"), una.value(), Bytes("-"), unb.value()
                     ),
                     TxnField.config_asset_unit_name: Bytes("dpt"),
-                    TxnField.config_asset_total: Int(int(1e9)),
-                    TxnField.config_asset_decimals: Int(0),
+                    TxnField.config_asset_total: total_supply,
+                    TxnField.config_asset_decimals: Int(3),
                     TxnField.config_asset_manager: Global.current_application_address(),
                     TxnField.config_asset_reserve: Global.current_application_address(),
                 }
@@ -271,12 +286,12 @@ def approval(asset_a: int, asset_b: int):
 
     router = Cond(
         # Users
-        [Txn.application_args[0] == action_deposit, deposit()],
-        [Txn.application_args[0] == action_withdraw, withdraw()],
+        [Txn.application_args[0] == action_mint, mint()],
+        [Txn.application_args[0] == action_burn, burn()],
         [Txn.application_args[0] == action_swap, swap()],
         # Admin
-        [Txn.application_args[0] == action_admin_init, init_pool()],
-        [Txn.application_args[0] == action_admin_update, set_governor(Txn.accounts[1])],
+        [Txn.application_args[0] == action_init, init_pool()],
+        [Txn.application_args[0] == action_update, set_governor(Txn.accounts[1])],
     )
 
     return Cond(
