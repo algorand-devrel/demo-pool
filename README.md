@@ -75,4 +75,4 @@ Run the demo `python demo.py`
 
 ## Thank You
 
-The equations for token operations were _heavily_ inspired by the fantastic [TinyMan docs](https://docs.tinyman.org/design-doc)
+The equations for token operations were _heavily_ inspired by the fantastic [Tinyman docs](https://docs.tinyman.org/design-doc)
