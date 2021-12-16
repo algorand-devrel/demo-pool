@@ -1,6 +1,9 @@
 import os
 from pyteal import *
 
+#WARNING: THIS IS NOT PROODUCTION LEVEL CODE
+
+
 gov_key = Bytes("gov")
 pool_key = Bytes("p")
 
