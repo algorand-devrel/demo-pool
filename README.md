@@ -3,7 +3,7 @@ Example Pool Contract
 
 ## WARNING 
 
-This code is meant for demonstration purposes only, it has _not_ been audited.
+This code is meant for demonstration purposes only, it has _not_ been audited. Not to mention, I haven't even checked the math yet. 
 
 DO NOT USE ON MAINNET 
 
