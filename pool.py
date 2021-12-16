@@ -1,10 +1,8 @@
 import os
 from pyteal import *
 
-
 gov_key = Bytes("gov")
 pool_key = Bytes("p")
-ratio_key = Bytes("rab")
 
 action_boot = Bytes("boot")
 action_fund = Bytes("fund")
@@ -29,7 +27,7 @@ def approval(asset_a: int, asset_b: int):
 
     pool_token = App.globalGet(pool_key)
 
-    is_correct_assets = And(Txn.assets[0] == asset_a, Txn.assets[1] == asset_b)
+    has_correct_assets = And(Txn.assets[0] == asset_a, Txn.assets[1] == asset_b)
 
     @Subroutine(TealType.uint64)
     def mint_tokens(issued, asup, bsup, aamt, bamt):
@@ -48,18 +46,25 @@ def approval(asset_a: int, asset_b: int):
     def mint():
         well_formed_mint = And(
             Global.group_size() == Int(3),  # App call, Asset A, Asset B
-            is_correct_assets,
+
+            has_correct_assets,
+
             Gtxn[0].type_enum() == TxnType.ApplicationCall,
             Gtxn[0].assets[0] == Gtxn[1].xfer_asset(),
             Gtxn[0].assets[1] == Gtxn[2].xfer_asset(),
+
             Gtxn[1].type_enum() == TxnType.AssetTransfer,
             Gtxn[1].asset_receiver() == mine,
             Gtxn[1].xfer_asset() == asset_a,
+            Gtxn[1].asset_amount() > Int(0),
+            Gtxn[1].sender() == Gtxn[0].sender(),
+
             Gtxn[2].type_enum() == TxnType.AssetTransfer,
             Gtxn[2].asset_receiver() == mine,
             Gtxn[2].xfer_asset() == asset_b,
-            Gtxn[0].sender() == Gtxn[1].sender(),
-            Gtxn[1].sender() == Gtxn[2].sender(),
+            Gtxn[2].asset_amount()>Int(0),
+            Gtxn[2].sender() == Gtxn[0].sender(),
+
         )
 
         pool_bal = AssetHolding.balance(mine, pool_token)
@@ -100,7 +105,7 @@ def approval(asset_a: int, asset_b: int):
 
         well_formed_burn = And(
             Global.group_size() == Int(2),
-            is_correct_assets,
+            has_correct_assets,
             Gtxn[0].type_enum() == TxnType.ApplicationCall,
             Gtxn[1].type_enum() == TxnType.AssetTransfer,
             Gtxn[1].asset_receiver() == mine,
@@ -159,7 +164,7 @@ def approval(asset_a: int, asset_b: int):
 
         well_formed_swap = And(
             Global.group_size() == Int(2),
-            is_correct_assets,
+            has_correct_assets,
             Gtxn[0].type_enum() == TxnType.ApplicationCall,
             Gtxn[1].type_enum() == TxnType.AssetTransfer,
             Or(in_id == asset_a, in_id == asset_b),
@@ -206,7 +211,7 @@ def approval(asset_a: int, asset_b: int):
         well_formed_bootstrap = And(
             Global.group_size() == Int(1),
             Gtxn[0].type_enum() == TxnType.ApplicationCall,
-            is_correct_assets,
+            has_correct_assets,
         )
 
         return Seq(
@@ -221,12 +226,20 @@ def approval(asset_a: int, asset_b: int):
     def fund():
         well_formed_fund = And(
             Global.group_size() == Int(3),
+
             Gtxn[0].type_enum() == TxnType.ApplicationCall,
-            is_correct_assets,
+
+            has_correct_assets,
+
             Gtxn[1].type_enum() == TxnType.AssetTransfer,
             Gtxn[1].xfer_asset() == asset_a,
+            Gtxn[1].asset_amount() > Int(0),
+            Gtxn[1].sender() == Gtxn[0].sender(),
+
             Gtxn[2].type_enum() == TxnType.AssetTransfer,
             Gtxn[2].xfer_asset() == asset_b,
+            Gtxn[2].asset_amount() > Int(0),
+            Gtxn[2].sender() == Gtxn[0].sender()
         )
 
         return Seq(
@@ -268,8 +281,7 @@ def approval(asset_a: int, asset_b: int):
         unb = AssetParam.unitName(b)  # TODO: use asset id instead?
 
         return Seq(
-            una,
-            unb,
+            una, unb,
             InnerTxnBuilder.Begin(),
             InnerTxnBuilder.SetFields(
                 {

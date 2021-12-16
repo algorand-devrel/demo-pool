@@ -1,36 +1,29 @@
+import base64
+
 from algosdk import *
 from algosdk.algod import AlgodClient
 from algosdk.v2client import algod
-from algosdk.v2client.models import DryrunSource, DryrunRequest
 from algosdk.future.transaction import *
-from pyteal.ast import asset
 from sandbox import get_accounts
 from pool import approval, clear
 from pyteal import compileTeal, Mode
-
-import base64
-import os
 
 token = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 url = "http://localhost:4001"
 
 client = algod.AlgodClient(token, url)
 
-asset_a = 100
-asset_b = 101
-
-
 def demo(app_id=None, asset_a=None, asset_b=None):
-    # Create acct
+    # Get Account from sandbox
     addr, sk = get_accounts()[0]
     print("Using {}".format(addr))
 
     if asset_a == None:
-        asset_a = create_asset(addr, sk)
+        asset_a = create_asset(addr, sk, "A")
         print("Created asset a with id: {}".format(asset_a))
 
     if asset_b == None:
-        asset_b = create_asset(addr, sk)
+        asset_b = create_asset(addr, sk, "B")
         print("Created asset a with id: {}".format(asset_b))
 
     if app_id == None:
@@ -41,62 +34,42 @@ def demo(app_id=None, asset_a=None, asset_b=None):
     app_addr = logic.get_application_address(app_id)
     print("Application Address: {}".format(app_addr))
 
-    fund_if_needed(client, addr, sk, app_addr, asset_a, asset_b)
+    # If this is a new contract, we should fund it with algos
+    fund_if_needed(client, addr, sk, app_addr)
 
     # Bootstrap Pool
     sp = client.suggested_params()
-    txn_group = [
+    txn_group = assign_group_id([
         get_app_call(addr, sp, app_id, app_args=["boot"], assets=[asset_a, asset_b]),
-    ]
-    signed_group = [txn.sign(sk) for txn in assign_group_id(txn_group)]
-
-    print("Sending transaction for boot")
-
-    #write_dryrun("boot", client, signed_group)
-
-    txid = client.send_transactions(signed_group)
-    result = wait_for_confirmation(client, txid, 4)
+    ])
+    result = send("boot", [txn.sign(sk) for txn in txn_group])
     pool_token = result["inner-txns"][0]["asset-index"]
 
     print("Created Pool Token: {}".format(pool_token))
 
-    # Opt admin into pool token
+    # Opt addr into newly created Pool Token
     sp = client.suggested_params()
-    txn_group = [
+    txn_group = assign_group_id([
         get_asset_xfer(addr, sp, pool_token, addr, 0),
-    ]
-    signed_group = [txn.sign(sk) for txn in assign_group_id(txn_group)]
-
-    print("Sending grouped transaction for OptIn")
-
-    txid = client.send_transactions(signed_group)
-    result = wait_for_confirmation(client, txid, 4)
-
+    ])
+    send("optin", [txn.sign(sk) for txn in txn_group])
     print_balances(app_addr, addr, pool_token, asset_a, asset_b)
 
-    # Fund Pool
+    # Fund Pool with initial liquidity
     sp = client.suggested_params()
-    txn_group = [
+    txn_group = assign_group_id([
         get_app_call(
             addr, sp, app_id, app_args=["fund"], assets=[asset_a, asset_b, pool_token]
         ),
         AssetTransferTxn(addr, sp, app_addr, 1000, asset_a),
         AssetTransferTxn(addr, sp, app_addr, 3000, asset_b),
-    ]
-    signed_group = [txn.sign(sk) for txn in assign_group_id(txn_group)]
-
-    print("Sending transaction for fund")
-
-    #write_dryrun("fund", client, signed_group)
-
-    txid = client.send_transactions(signed_group)
-    result = wait_for_confirmation(client, txid, 4)
-
+    ])
+    send("fund",  [txn.sign(sk) for txn in txn_group])
     print_balances(app_addr, addr, pool_token, asset_a, asset_b)
 
-    # Mint liq tokens
+    # Mint liquidity tokens
     sp = client.suggested_params()
-    txn_group = [
+    txn_group = assign_group_id([
         get_app_call(
             addr,
             sp,
@@ -106,66 +79,36 @@ def demo(app_id=None, asset_a=None, asset_b=None):
         ),
         get_asset_xfer(addr, sp, asset_a, app_addr, 100000),
         get_asset_xfer(addr, sp, asset_b, app_addr, 10000),
-    ]
+    ])
 
-    signed_group = [txn.sign(sk) for txn in assign_group_id(txn_group)]
-
-    print("Sending grouped transaction for mint")
-
-    #write_dryrun("mint", client, signed_group)
-
-    txid = client.send_transactions(signed_group)
-    result = wait_for_confirmation(client, txid, 4)
-
+    send("mint",[txn.sign(sk) for txn in txn_group])
     print_balances(app_addr, addr, pool_token, asset_a, asset_b)
 
     # Swap A for B
     sp = client.suggested_params()
-    txn_group = [
+    txn_group = assign_group_id([
         get_app_call(addr, sp, app_id, ["swap"], [asset_a, asset_b]),
         get_asset_xfer(addr, sp, asset_a, app_addr, 5),
-    ]
-
-    signed_group = [txn.sign(sk) for txn in assign_group_id(txn_group)]
-    print("Sending grouped transaction for Swap A to B")
-
-    #write_dryrun("swap_a_b", client, signed_group)
-    txid = client.send_transactions(signed_group)
-    result = wait_for_confirmation(client, txid, 4)
-
+    ])
+    send("swap_a_b", [txn.sign(sk) for txn in txn_group])
     print_balances(app_addr, addr, pool_token, asset_a, asset_b)
 
     # Swap B for A
     sp = client.suggested_params()
-    txn_group = [
+    txn_group = assign_group_id([
         get_app_call(addr, sp, app_id, ["swap"], [asset_a, asset_b]),
         get_asset_xfer(addr, sp, asset_b, app_addr, 5),
-    ]
-
-    signed_group = [txn.sign(sk) for txn in assign_group_id(txn_group)]
-    print("Sending grouped transaction for Swap B to A")
-
-    #write_dryrun("swap_b_a", client, signed_group)
-    txid = client.send_transactions(signed_group)
-    result = wait_for_confirmation(client, txid, 4)
-
+    ])
+    send("swap_b_a", [txn.sign(sk) for txn in txn_group])
     print_balances(app_addr, addr, pool_token, asset_a, asset_b)
 
     # Burn liq tokens
     sp = client.suggested_params()
-    txn_group = [
+    txn_group = assign_group_id([
         get_app_call(addr, sp, app_id, ["burn"], [asset_a, asset_b, pool_token]),
         get_asset_xfer(addr, sp, pool_token, app_addr, 1000),
-    ]
-
-    signed_group = [txn.sign(sk) for txn in assign_group_id(txn_group)]
-
-    print("Sending grouped transaction for burn")
-
-    #write_dryrun("burn", client, signed_group)
-    txid = client.send_transactions(signed_group)
-    result = wait_for_confirmation(client, txid, 4)
-
+    ])
+    send("burn", [txn.sign(sk) for txn in txn_group])
     print_balances(app_addr, addr, pool_token, asset_a, asset_b)
 
 
@@ -185,12 +128,12 @@ def get_app_call(addr, sp, app_id, app_args=[], assets=[], accounts=[]):
     )
 
 
-def create_asset(addr, pk):
+def create_asset(addr, pk, unitname):
     # Get suggested params from network
     sp = client.suggested_params()
     # Create the transaction
     create_txn = AssetCreateTxn(
-        addr, sp, 1000000, 0, False, asset_name="asset", unit_name="ast"
+        addr, sp, 1000000, 0, False, asset_name="asset", unit_name=unitname
     )
     # Ship it
     txid = client.send_transaction(create_txn.sign(pk))
@@ -232,8 +175,7 @@ def create_app(addr, pk, a, b):
     return result["application-index"]
 
 
-def fund_if_needed(client: AlgodClient, funder: str, pk: str, app: str, a: int, b: int):
-
+def fund_if_needed(client: AlgodClient, funder: str, pk: str, app: str):
     fund = False
     try:
         ai = client.account_info(app)
@@ -245,13 +187,13 @@ def fund_if_needed(client: AlgodClient, funder: str, pk: str, app: str, a: int, 
         # Fund App address
         sp = client.suggested_params()
         txn_group = [PaymentTxn(funder, sp, app, 10000000)]
-        signed_group = [txn.sign(pk) for txn in assign_group_id(txn_group)]
+        return send("seed", [txn.sign(pk) for txn in txn_group])
 
-        txid = client.send_transactions(signed_group)
-        print("Sending transaction for boot: {}".format(txid))
-
-        result = wait_for_confirmation(client, txid, 4)
-
+def send(name, signed_group):
+    print("Sending Transaction for {}".format(name))
+    #write_dryrun(name, client, signed_group)
+    txid = client.send_transactions(signed_group)
+    return wait_for_confirmation(client, txid, 4)
 
 def write_dryrun(name: str, client: AlgodClient, txns: List[SignedTransaction]):
     with open("dryruns/" + name + ".msgp", "wb") as f:
