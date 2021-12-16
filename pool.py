@@ -46,25 +46,20 @@ def approval(asset_a: int, asset_b: int):
     def mint():
         well_formed_mint = And(
             Global.group_size() == Int(3),  # App call, Asset A, Asset B
-
             has_correct_assets,
-
             Gtxn[0].type_enum() == TxnType.ApplicationCall,
             Gtxn[0].assets[0] == Gtxn[1].xfer_asset(),
             Gtxn[0].assets[1] == Gtxn[2].xfer_asset(),
-
             Gtxn[1].type_enum() == TxnType.AssetTransfer,
             Gtxn[1].asset_receiver() == mine,
             Gtxn[1].xfer_asset() == asset_a,
             Gtxn[1].asset_amount() > Int(0),
             Gtxn[1].sender() == Gtxn[0].sender(),
-
             Gtxn[2].type_enum() == TxnType.AssetTransfer,
             Gtxn[2].asset_receiver() == mine,
             Gtxn[2].xfer_asset() == asset_b,
-            Gtxn[2].asset_amount()>Int(0),
+            Gtxn[2].asset_amount() > Int(0),
             Gtxn[2].sender() == Gtxn[0].sender(),
-
         )
 
         pool_bal = AssetHolding.balance(mine, pool_token)
@@ -73,30 +68,25 @@ def approval(asset_a: int, asset_b: int):
 
         return Seq(
             # Init MaybeValues
-            pool_bal, a_bal, b_bal,
+            pool_bal,
+            a_bal,
+            b_bal,
             # Check that the transaction is constructed correctly
             Assert(well_formed_mint),
             # Check that we have these things
             Assert(And(pool_bal.hasValue(), a_bal.hasValue(), b_bal.hasValue())),
-
-            #mint tokens
-            InnerTxnBuilder.Begin(),
-            InnerTxnBuilder.SetFields(
-                {
-                    TxnField.type_enum: TxnType.AssetTransfer,
-                    TxnField.xfer_asset: pool_token,
-                    TxnField.asset_amount: mint_tokens(
-                        total_supply - pool_bal.value(),
-                        a_bal.value(),
-                        b_bal.value(),
-                        Gtxn[1].asset_amount(),
-                        Gtxn[2].asset_amount(),
-                    ),
-                    TxnField.asset_receiver: Txn.accounts[0],
-                }
+            # mint tokens
+            axfer(
+                Gtxn[0].sender(),
+                pool_token,
+                mint_tokens(
+                    total_supply - pool_bal.value(),
+                    a_bal.value(),
+                    b_bal.value(),
+                    Gtxn[1].asset_amount(),
+                    Gtxn[2].asset_amount(),
+                ),
             ),
-            InnerTxnBuilder.Submit(),
-
             Int(1),
         )
 
@@ -117,48 +107,36 @@ def approval(asset_a: int, asset_b: int):
         b_bal = AssetHolding.balance(mine, asset_b)
 
         return Seq(
-            pool_bal, a_bal, b_bal,
+            pool_bal,
+            a_bal,
+            b_bal,
             Assert(well_formed_burn),
             Assert(And(pool_bal.hasValue(), a_bal.hasValue(), b_bal.hasValue())),
-
             # Send back a
-            InnerTxnBuilder.Begin(),
-            InnerTxnBuilder.SetFields(
-                {
-                    TxnField.type_enum: TxnType.AssetTransfer,
-                    TxnField.xfer_asset: asset_a,
-                    TxnField.asset_amount: burn_tokens(
-                        total_supply - pool_bal.value(),
-                        a_bal.value(),
-                        Gtxn[1].asset_amount(),
-                    ),
-                    TxnField.asset_receiver: Gtxn[1].sender(),
-                }
+            axfer(
+                Gtxn[1].sender(),
+                asset_a,
+                burn_tokens(
+                    total_supply - pool_bal.value(),
+                    a_bal.value(),
+                    Gtxn[1].asset_amount(),
+                ),
             ),
-            InnerTxnBuilder.Submit(),
-
             # Send back b
-            InnerTxnBuilder.Begin(),
-            InnerTxnBuilder.SetFields(
-                {
-                    TxnField.type_enum: TxnType.AssetTransfer,
-                    TxnField.xfer_asset: asset_b,
-                    TxnField.asset_amount: burn_tokens(
-                        total_supply - pool_bal.value(),
-                        b_bal.value(),
-                        Gtxn[1].asset_amount(),
-                    ),
-                    TxnField.asset_receiver: Gtxn[1].sender(),
-                }
+            axfer(
+                Gtxn[1].sender(),
+                asset_b,
+                burn_tokens(
+                    total_supply - pool_bal.value(),
+                    b_bal.value(),
+                    Gtxn[1].asset_amount(),
+                ),
             ),
-            InnerTxnBuilder.Submit(),
-
             Int(1),
         )
 
     @Subroutine(TealType.uint64)
     def swap():
-
         in_id = Gtxn[1].xfer_asset()
         out_id = If(Gtxn[1].xfer_asset() == asset_a, asset_b, asset_a)
 
@@ -179,18 +157,11 @@ def approval(asset_a: int, asset_b: int):
             out_sup,
             Assert(well_formed_swap),
             Assert(And(in_sup.hasValue(), out_sup.hasValue())),
-            InnerTxnBuilder.Begin(),
-            InnerTxnBuilder.SetFields(
-                {
-                    TxnField.type_enum: TxnType.AssetTransfer,
-                    TxnField.xfer_asset: asset_b,
-                    TxnField.asset_amount: swap_tokens(
-                        Gtxn[1].asset_amount(), in_sup.value(), out_sup.value()
-                    ),
-                    TxnField.asset_receiver: Gtxn[1].sender(),
-                }
+            axfer(
+                Gtxn[1].sender(),
+                out_id,
+                swap_tokens(Gtxn[1].asset_amount(), in_sup.value(), out_sup.value()),
             ),
-            InnerTxnBuilder.Submit(),
             Int(1),
         )
 
@@ -218,7 +189,8 @@ def approval(asset_a: int, asset_b: int):
             Assert(well_formed_bootstrap),
             Assert(is_governor()),
             create_pool_token(asset_a, asset_b),
-            opt_in(asset_a), opt_in(asset_b),
+            opt_in(asset_a),
+            opt_in(asset_b),
             Int(1),
         )
 
@@ -226,54 +198,46 @@ def approval(asset_a: int, asset_b: int):
     def fund():
         well_formed_fund = And(
             Global.group_size() == Int(3),
-
             Gtxn[0].type_enum() == TxnType.ApplicationCall,
-
             has_correct_assets,
-
             Gtxn[1].type_enum() == TxnType.AssetTransfer,
             Gtxn[1].xfer_asset() == asset_a,
             Gtxn[1].asset_amount() > Int(0),
             Gtxn[1].sender() == Gtxn[0].sender(),
-
             Gtxn[2].type_enum() == TxnType.AssetTransfer,
             Gtxn[2].xfer_asset() == asset_b,
             Gtxn[2].asset_amount() > Int(0),
-            Gtxn[2].sender() == Gtxn[0].sender()
+            Gtxn[2].sender() == Gtxn[0].sender(),
         )
 
         return Seq(
             Assert(well_formed_fund),
-            InnerTxnBuilder.Begin(),
-            InnerTxnBuilder.SetFields(
-                {
-                    TxnField.type_enum: TxnType.AssetTransfer,
-                    TxnField.xfer_asset: App.globalGet(pool_key),
-                    TxnField.asset_amount: Sqrt(
-                        Gtxn[1].asset_amount() * Gtxn[2].asset_amount()
-                    )
-                    - scale,
-                    TxnField.asset_receiver: Gtxn[0].sender(),
-                }
+            axfer(
+                Gtxn[0].sender(),
+                pool_token,
+                Sqrt(Gtxn[1].asset_amount() * Gtxn[2].asset_amount()) - scale,
             ),
-            InnerTxnBuilder.Submit(),
             Int(1),
         )
 
     @Subroutine(TealType.none)
-    def opt_in(aid: TealType.uint64):
+    def axfer(rx: TealType.bytes, aid: TealType.uint64, amt: TealType.uint64):
         return Seq(
             InnerTxnBuilder.Begin(),
             InnerTxnBuilder.SetFields(
                 {
                     TxnField.type_enum: TxnType.AssetTransfer,
                     TxnField.xfer_asset: aid,
-                    TxnField.asset_amount: Int(0),
-                    TxnField.asset_receiver: mine,
+                    TxnField.asset_amount: amt,
+                    TxnField.asset_receiver: rx,
                 }
             ),
             InnerTxnBuilder.Submit(),
         )
+
+    @Subroutine(TealType.none)
+    def opt_in(aid: TealType.uint64):
+        return axfer(mine, aid, Int(0))
 
     @Subroutine(TealType.none)
     def create_pool_token(a: TealType.uint64, b: TealType.uint64):
@@ -281,7 +245,8 @@ def approval(asset_a: int, asset_b: int):
         unb = AssetParam.unitName(b)  # TODO: use asset id instead?
 
         return Seq(
-            una, unb,
+            una,
+            unb,
             InnerTxnBuilder.Begin(),
             InnerTxnBuilder.SetFields(
                 {

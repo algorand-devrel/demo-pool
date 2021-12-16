@@ -13,6 +13,7 @@ url = "http://localhost:4001"
 
 client = algod.AlgodClient(token, url)
 
+
 def demo(app_id=None, asset_a=None, asset_b=None):
     # Get Account from sandbox
     addr, sk = get_accounts()[0]
@@ -39,9 +40,13 @@ def demo(app_id=None, asset_a=None, asset_b=None):
 
     # Bootstrap Pool
     sp = client.suggested_params()
-    txn_group = assign_group_id([
-        get_app_call(addr, sp, app_id, app_args=["boot"], assets=[asset_a, asset_b]),
-    ])
+    txn_group = assign_group_id(
+        [
+            get_app_call(
+                addr, sp, app_id, app_args=["boot"], assets=[asset_a, asset_b]
+            ),
+        ]
+    )
     result = send("boot", [txn.sign(sk) for txn in txn_group])
     pool_token = result["inner-txns"][0]["asset-index"]
 
@@ -49,65 +54,81 @@ def demo(app_id=None, asset_a=None, asset_b=None):
 
     # Opt addr into newly created Pool Token
     sp = client.suggested_params()
-    txn_group = assign_group_id([
-        get_asset_xfer(addr, sp, pool_token, addr, 0),
-    ])
+    txn_group = assign_group_id(
+        [
+            get_asset_xfer(addr, sp, pool_token, addr, 0),
+        ]
+    )
     send("optin", [txn.sign(sk) for txn in txn_group])
     print_balances(app_addr, addr, pool_token, asset_a, asset_b)
 
     # Fund Pool with initial liquidity
     sp = client.suggested_params()
-    txn_group = assign_group_id([
-        get_app_call(
-            addr, sp, app_id, app_args=["fund"], assets=[asset_a, asset_b, pool_token]
-        ),
-        AssetTransferTxn(addr, sp, app_addr, 1000, asset_a),
-        AssetTransferTxn(addr, sp, app_addr, 3000, asset_b),
-    ])
-    send("fund",  [txn.sign(sk) for txn in txn_group])
+    txn_group = assign_group_id(
+        [
+            get_app_call(
+                addr,
+                sp,
+                app_id,
+                app_args=["fund"],
+                assets=[asset_a, asset_b, pool_token],
+            ),
+            AssetTransferTxn(addr, sp, app_addr, 1000, asset_a),
+            AssetTransferTxn(addr, sp, app_addr, 3000, asset_b),
+        ]
+    )
+    send("fund", [txn.sign(sk) for txn in txn_group])
     print_balances(app_addr, addr, pool_token, asset_a, asset_b)
 
     # Mint liquidity tokens
     sp = client.suggested_params()
-    txn_group = assign_group_id([
-        get_app_call(
-            addr,
-            sp,
-            app_id,
-            app_args=["mint"],
-            assets=[asset_a, asset_b, pool_token],
-        ),
-        get_asset_xfer(addr, sp, asset_a, app_addr, 100000),
-        get_asset_xfer(addr, sp, asset_b, app_addr, 10000),
-    ])
+    txn_group = assign_group_id(
+        [
+            get_app_call(
+                addr,
+                sp,
+                app_id,
+                app_args=["mint"],
+                assets=[asset_a, asset_b, pool_token],
+            ),
+            get_asset_xfer(addr, sp, asset_a, app_addr, 100000),
+            get_asset_xfer(addr, sp, asset_b, app_addr, 10000),
+        ]
+    )
 
-    send("mint",[txn.sign(sk) for txn in txn_group])
+    send("mint", [txn.sign(sk) for txn in txn_group])
     print_balances(app_addr, addr, pool_token, asset_a, asset_b)
 
     # Swap A for B
     sp = client.suggested_params()
-    txn_group = assign_group_id([
-        get_app_call(addr, sp, app_id, ["swap"], [asset_a, asset_b]),
-        get_asset_xfer(addr, sp, asset_a, app_addr, 5),
-    ])
+    txn_group = assign_group_id(
+        [
+            get_app_call(addr, sp, app_id, ["swap"], [asset_a, asset_b]),
+            get_asset_xfer(addr, sp, asset_a, app_addr, 5),
+        ]
+    )
     send("swap_a_b", [txn.sign(sk) for txn in txn_group])
     print_balances(app_addr, addr, pool_token, asset_a, asset_b)
 
     # Swap B for A
     sp = client.suggested_params()
-    txn_group = assign_group_id([
-        get_app_call(addr, sp, app_id, ["swap"], [asset_a, asset_b]),
-        get_asset_xfer(addr, sp, asset_b, app_addr, 5),
-    ])
+    txn_group = assign_group_id(
+        [
+            get_app_call(addr, sp, app_id, ["swap"], [asset_a, asset_b]),
+            get_asset_xfer(addr, sp, asset_b, app_addr, 5),
+        ]
+    )
     send("swap_b_a", [txn.sign(sk) for txn in txn_group])
     print_balances(app_addr, addr, pool_token, asset_a, asset_b)
 
     # Burn liq tokens
     sp = client.suggested_params()
-    txn_group = assign_group_id([
-        get_app_call(addr, sp, app_id, ["burn"], [asset_a, asset_b, pool_token]),
-        get_asset_xfer(addr, sp, pool_token, app_addr, 1000),
-    ])
+    txn_group = assign_group_id(
+        [
+            get_app_call(addr, sp, app_id, ["burn"], [asset_a, asset_b, pool_token]),
+            get_asset_xfer(addr, sp, pool_token, app_addr, 1000),
+        ]
+    )
     send("burn", [txn.sign(sk) for txn in txn_group])
     print_balances(app_addr, addr, pool_token, asset_a, asset_b)
 
@@ -189,11 +210,13 @@ def fund_if_needed(client: AlgodClient, funder: str, pk: str, app: str):
         txn_group = [PaymentTxn(funder, sp, app, 10000000)]
         return send("seed", [txn.sign(pk) for txn in txn_group])
 
+
 def send(name, signed_group):
     print("Sending Transaction for {}".format(name))
-    #write_dryrun(name, client, signed_group)
+    # write_dryrun(name, client, signed_group)
     txid = client.send_transactions(signed_group)
     return wait_for_confirmation(client, txid, 4)
+
 
 def write_dryrun(name: str, client: AlgodClient, txns: List[SignedTransaction]):
     with open("dryruns/" + name + ".msgp", "wb") as f:
