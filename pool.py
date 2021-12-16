@@ -241,8 +241,8 @@ def approval(asset_a: int, asset_b: int):
 
     @Subroutine(TealType.none)
     def create_pool_token(a: TealType.uint64, b: TealType.uint64):
-        una = AssetParam.unitName(a)  # TODO: use asset id instead?
-        unb = AssetParam.unitName(b)  # TODO: use asset id instead?
+        una = AssetParam.unitName(a)
+        unb = AssetParam.unitName(b)
 
         return Seq(
             una,

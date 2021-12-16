@@ -61,7 +61,7 @@ min(
 ```
 
 
-## To run the exampleo
+## To run the example
 
 Make sure [sandbox](https://github.com/algorand/sandbox) is installed and running with a private node configuration (`./sandbox up release`)
 
