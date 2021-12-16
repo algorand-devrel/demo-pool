@@ -72,3 +72,7 @@ Install python requirements `pip install -U -r requirements.txt`
 Run the demo `python demo.py`
 
 > Note: If it fails on the first time, you're probably on dev config and the asset balance lookups are weird for asset ids < 8, just try again
+
+## Thank You
+
+The equations for token operations were _heavily_ inspired by the fantastic [TinyMan docs](https://docs.tinyman.org/design-doc)
