@@ -46,15 +46,13 @@ def demo(app_id=None, asset_a=None, asset_b=None):
     # Bootstrap Pool
     sp = client.suggested_params()
     txn_group = [
-        get_app_call(
-            addr, sp, app_id, app_args=["boot"], assets=[asset_a, asset_b]
-        ),
+        get_app_call(addr, sp, app_id, app_args=["boot"], assets=[asset_a, asset_b]),
     ]
     signed_group = [txn.sign(sk) for txn in assign_group_id(txn_group)]
 
     print("Sending transaction for boot")
 
-    write_dryrun("boot", client, signed_group)
+    #write_dryrun("boot", client, signed_group)
 
     txid = client.send_transactions(signed_group)
     result = wait_for_confirmation(client, txid, 4)
@@ -89,11 +87,12 @@ def demo(app_id=None, asset_a=None, asset_b=None):
 
     print("Sending transaction for fund")
 
-    write_dryrun("fund", client, signed_group)
+    #write_dryrun("fund", client, signed_group)
 
     txid = client.send_transactions(signed_group)
     result = wait_for_confirmation(client, txid, 4)
 
+    print_balances(app_addr, addr, pool_token, asset_a, asset_b)
 
     # Mint liq tokens
     sp = client.suggested_params()
@@ -113,7 +112,7 @@ def demo(app_id=None, asset_a=None, asset_b=None):
 
     print("Sending grouped transaction for mint")
 
-    write_dryrun("mint", client, signed_group)
+    #write_dryrun("mint", client, signed_group)
 
     txid = client.send_transactions(signed_group)
     result = wait_for_confirmation(client, txid, 4)
@@ -130,7 +129,7 @@ def demo(app_id=None, asset_a=None, asset_b=None):
     signed_group = [txn.sign(sk) for txn in assign_group_id(txn_group)]
     print("Sending grouped transaction for Swap A to B")
 
-    write_dryrun("swap_a_b", client, signed_group)
+    #write_dryrun("swap_a_b", client, signed_group)
     txid = client.send_transactions(signed_group)
     result = wait_for_confirmation(client, txid, 4)
 
@@ -146,7 +145,7 @@ def demo(app_id=None, asset_a=None, asset_b=None):
     signed_group = [txn.sign(sk) for txn in assign_group_id(txn_group)]
     print("Sending grouped transaction for Swap B to A")
 
-    write_dryrun("swap_b_a", client, signed_group)
+    #write_dryrun("swap_b_a", client, signed_group)
     txid = client.send_transactions(signed_group)
     result = wait_for_confirmation(client, txid, 4)
 
@@ -163,7 +162,7 @@ def demo(app_id=None, asset_a=None, asset_b=None):
 
     print("Sending grouped transaction for burn")
 
-    write_dryrun("burn", client, signed_group)
+    #write_dryrun("burn", client, signed_group)
     txid = client.send_transactions(signed_group)
     result = wait_for_confirmation(client, txid, 4)
 
