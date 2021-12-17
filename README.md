@@ -5,6 +5,8 @@ Example Pool Contract
 
 This code is meant for demonstration purposes only, it has _not_ been audited. Not to mention, I haven't even checked the math yet. 
 
+Also this does not use wide math operations, so it _will_ fail if you tried to use it without serious modifications.
+
 DO NOT USE ON MAINNET 
 
 
