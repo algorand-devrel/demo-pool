@@ -61,13 +61,11 @@ def approval(lock_start: int = 0, lock_stop: int = 0):
         pool_bal = AssetHolding.balance(me, pool_token)
 
         return Seq(
-            # Make sure we're in the joinable window
-            #Assert(before_lock_start),
             # Init MaybeValues
             pool_bal,
-            # Check that the transaction is constructed correctly
+            # TODO: uncomment when done testing on dev
+            #Assert(before_lock_start),
             Assert(well_formed_join),
-            # mint pool tokens
             axfer(app_call.sender(), pool_token, mint_tokens(payment.amount())),
             Int(1),
         )
@@ -90,6 +88,7 @@ def approval(lock_start: int = 0, lock_stop: int = 0):
 
         return Seq(
             pool_bal,
+            # TODO: uncomment when done testing on dev
             #Assert(after_lock_stop),
             Assert(well_formed_exit),
             pay(
