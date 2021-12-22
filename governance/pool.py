@@ -8,12 +8,12 @@ from pytealutils.string import itoa
 gov_key = Bytes("gov")
 pool_token_key = Bytes("p")
 
+action_update = Bytes("update")
 action_boot = Bytes("boot")
 
 action_join = Bytes("join")
+action_vote = Bytes("vote")
 action_exit = Bytes("exit")
-
-action_update = Bytes("update")
 
 total_supply = int(1e17)
 seed_amount = int(1e9)
@@ -102,41 +102,33 @@ def approval(lock_start: int = 0, lock_stop: int = 0):
             Int(1),
         )
 
-    @Subroutine(TealType.none)
-    def axfer(reciever: TealType.bytes, aid: TealType.uint64, amt: TealType.uint64):
-        return Seq(
-            InnerTxnBuilder.Begin(),
-            InnerTxnBuilder.SetFields(
-                {
-                    TxnField.type_enum: TxnType.AssetTransfer,
-                    TxnField.xfer_asset: aid,
-                    TxnField.asset_amount: amt,
-                    TxnField.asset_receiver: reciever,
-                    TxnField.fee: Int(0),
-                }
-            ),
-            InnerTxnBuilder.Submit(),
+    @Subroutine(TealType.uint64)
+    def vote():
+        app_call = Gtxn[0]
+        well_formed_vote = And(
+            Global.group_size() == Int(1),
+            app_call.type_enum() == TxnType.ApplicationCall,
+            app_call.sender() == governor,
         )
-
-    @Subroutine(TealType.none)
-    def pay(reciever: TealType.bytes, amt: TealType.uint64):
         return Seq(
+            # TODO: assert we're in the voting window
+            Assert(well_formed_vote),
             InnerTxnBuilder.Begin(),
             InnerTxnBuilder.SetFields(
                 {
                     TxnField.type_enum: TxnType.Payment,
-                    TxnField.amount: amt,
-                    TxnField.receiver: reciever,
+                    TxnField.receiver: Txn.accounts[
+                        1
+                    ],  # TODO: this should be hardcoded not passed in
+                    TxnField.amount: Int(0),  # not strictly necessary
+                    TxnField.note: Txn.application_args[
+                        1
+                    ],  # expecting a valid note as the 2nd element in app args array
                     TxnField.fee: Int(0),
                 }
             ),
             InnerTxnBuilder.Submit(),
-        )
-
-    @Subroutine(TealType.uint64)
-    def set_governor(new_gov: TealType.bytes):
-        return Seq(
-            Assert(Txn.sender() == governor), App.globalPut(gov_key, new_gov), Int(1)
+            Int(1),
         )
 
     @Subroutine(TealType.uint64)
@@ -182,9 +174,47 @@ def approval(lock_start: int = 0, lock_stop: int = 0):
             Int(1),
         )
 
+    @Subroutine(TealType.uint64)
+    def set_governor(new_gov: TealType.bytes):
+        return Seq(
+            Assert(Txn.sender() == governor), App.globalPut(gov_key, new_gov), Int(1)
+        )
+
+    @Subroutine(TealType.none)
+    def axfer(reciever: TealType.bytes, aid: TealType.uint64, amt: TealType.uint64):
+        return Seq(
+            InnerTxnBuilder.Begin(),
+            InnerTxnBuilder.SetFields(
+                {
+                    TxnField.type_enum: TxnType.AssetTransfer,
+                    TxnField.xfer_asset: aid,
+                    TxnField.asset_amount: amt,
+                    TxnField.asset_receiver: reciever,
+                    TxnField.fee: Int(0),
+                }
+            ),
+            InnerTxnBuilder.Submit(),
+        )
+
+    @Subroutine(TealType.none)
+    def pay(reciever: TealType.bytes, amt: TealType.uint64):
+        return Seq(
+            InnerTxnBuilder.Begin(),
+            InnerTxnBuilder.SetFields(
+                {
+                    TxnField.type_enum: TxnType.Payment,
+                    TxnField.amount: amt,
+                    TxnField.receiver: reciever,
+                    TxnField.fee: Int(0),
+                }
+            ),
+            InnerTxnBuilder.Submit(),
+        )
+
     router = Cond(
         # Users
         [Txn.application_args[0] == action_join, join()],
+        [Txn.application_args[0] == action_vote, vote()],
         [Txn.application_args[0] == action_exit, exit()],
         # Admin
         [Txn.application_args[0] == action_boot, bootstrap()],
@@ -206,11 +236,10 @@ def clear():
 
 
 def get_approval_src(**kwargs):
-    return compileTeal(approval(**kwargs), mode=Mode.Application, version=5)
-
+    return compileTeal(approval(**kwargs), mode=Mode.Application, version=6)
 
 def get_clear_src(**kwargs):
-    return compileTeal(clear(**kwargs), mode=Mode.Application, version=5)
+    return compileTeal(clear(**kwargs), mode=Mode.Application, version=6)
 
 
 if __name__ == "__main__":
