@@ -64,7 +64,7 @@ def approval(lock_start: int = 0, lock_stop: int = 0):
             # Init MaybeValues
             pool_bal,
             # TODO: uncomment when done testing on dev
-            #Assert(before_lock_start),
+            # Assert(before_lock_start),
             Assert(well_formed_join),
             axfer(app_call.sender(), pool_token, mint_tokens(payment.amount())),
             Int(1),
@@ -89,7 +89,7 @@ def approval(lock_start: int = 0, lock_stop: int = 0):
         return Seq(
             pool_bal,
             # TODO: uncomment when done testing on dev
-            #Assert(after_lock_stop),
+            # Assert(after_lock_stop),
             Assert(well_formed_exit),
             pay(
                 pool_xfer.sender(),
@@ -132,7 +132,7 @@ def approval(lock_start: int = 0, lock_stop: int = 0):
             ),
             InnerTxnBuilder.Submit(),
         )
-        
+
     @Subroutine(TealType.uint64)
     def set_governor(new_gov: TealType.bytes):
         return Seq(
@@ -148,7 +148,7 @@ def approval(lock_start: int = 0, lock_stop: int = 0):
             # Seed amount so it can send transactions
             seed.type_enum() == TxnType.Payment,
             seed.amount() == Int(seed_amount),
-            # 
+            #
             app_call.type_enum() == TxnType.ApplicationCall,
             app_call.sender() == governor,
             app_call.sender() == seed.sender(),
