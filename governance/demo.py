@@ -90,7 +90,7 @@ def demo(app_id=None):
                 sp,
                 app_id,
                 app_args=["vote", json.dumps({"vote": "a"})],
-                accounts=[app_addr],
+                accounts=["57QZ4S7YHTWPRAM3DQ2MLNSVLAQB7DTK4D7SUNRIEFMRGOU7DMYFGF55BY"],
             )
         ]
     )

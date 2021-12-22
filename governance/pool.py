@@ -96,7 +96,7 @@ def approval(lock_start: int = 0, lock_stop: int = 0):
                 burn_tokens(
                     pool_xfer.asset_amount(),
                     Balance(me),
-                    Int(total_supply) - pool_bal.value(),
+                    get_minted()
                 ),
             ),
             Int(1),
@@ -146,6 +146,7 @@ def approval(lock_start: int = 0, lock_stop: int = 0):
             app_call.sender() == seed.sender(),
         )
 
+
         pool_token_check = App.globalGetEx(Int(0), pool_token_key)
 
         return Seq(
@@ -175,6 +176,13 @@ def approval(lock_start: int = 0, lock_stop: int = 0):
         )
 
     @Subroutine(TealType.uint64)
+    def get_minted():
+        pool_bal = AssetHolding.balance(me, pool_token)
+        return Seq(pool_bal, Int(total_supply) - pool_bal.value())
+
+
+
+    @Subroutine(TealType.uint64)
     def set_governor(new_gov: TealType.bytes):
         return Seq(
             Assert(Txn.sender() == governor), App.globalPut(gov_key, new_gov), Int(1)
@@ -197,14 +205,14 @@ def approval(lock_start: int = 0, lock_stop: int = 0):
         )
 
     @Subroutine(TealType.none)
-    def pay(reciever: TealType.bytes, amt: TealType.uint64):
+    def pay(receiver: TealType.bytes, amt: TealType.uint64):
         return Seq(
             InnerTxnBuilder.Begin(),
             InnerTxnBuilder.SetFields(
                 {
                     TxnField.type_enum: TxnType.Payment,
                     TxnField.amount: amt,
-                    TxnField.receiver: reciever,
+                    TxnField.receiver: receiver,
                     TxnField.fee: Int(0),
                 }
             ),
@@ -214,11 +222,11 @@ def approval(lock_start: int = 0, lock_stop: int = 0):
     router = Cond(
         # Users
         [Txn.application_args[0] == action_join, join()],
-        [Txn.application_args[0] == action_vote, vote()],
         [Txn.application_args[0] == action_exit, exit()],
         # Admin
         [Txn.application_args[0] == action_boot, bootstrap()],
         [Txn.application_args[0] == action_update, set_governor(Txn.accounts[1])],
+        [Txn.application_args[0] == action_vote, vote()],
     )
 
     return Cond(
