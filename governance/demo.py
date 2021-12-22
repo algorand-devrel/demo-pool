@@ -83,8 +83,16 @@ def demo(app_id=None):
     sp = client.suggested_params()
     sp.fee = sp.min_fee * 2  # pay for the txn
     txn_group = assign_group_id(
-        #TODO: need to actually generate the vote payload and pass the governance address
-        [get_app_call(addr, sp, app_id, app_args=["vote", json.dumps({'vote':'a'})], accounts=[app_addr])]
+        # TODO: need to actually generate the vote payload and pass the governance address
+        [
+            get_app_call(
+                addr,
+                sp,
+                app_id,
+                app_args=["vote", json.dumps({"vote": "a"})],
+                accounts=[app_addr],
+            )
+        ]
     )
     send("vote", [txn.sign(sk) for txn in txn_group])
     print_balances(app_addr, addr, pool_token)

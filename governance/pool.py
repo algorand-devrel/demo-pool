@@ -238,6 +238,7 @@ def clear():
 def get_approval_src(**kwargs):
     return compileTeal(approval(**kwargs), mode=Mode.Application, version=6)
 
+
 def get_clear_src(**kwargs):
     return compileTeal(clear(**kwargs), mode=Mode.Application, version=6)
 
