@@ -1,4 +1,4 @@
-Example Pool Contract
+Example AMM Contract
 ------------------------
 
 ## WARNING 
