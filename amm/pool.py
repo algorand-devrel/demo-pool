@@ -224,7 +224,7 @@ def approval(asset_a: int, asset_b: int):
         )
 
     @Subroutine(TealType.none)
-    def axfer(rx: TealType.bytes, aid: TealType.uint64, amt: TealType.uint64):
+    def axfer(rx, aid, amt):
         return Seq(
             InnerTxnBuilder.Begin(),
             InnerTxnBuilder.SetFields(
@@ -239,11 +239,11 @@ def approval(asset_a: int, asset_b: int):
         )
 
     @Subroutine(TealType.none)
-    def opt_in(aid: TealType.uint64):
+    def opt_in(aid):
         return axfer(mine, aid, Int(0))
 
     @Subroutine(TealType.none)
-    def create_pool_token(a: TealType.uint64, b: TealType.uint64):
+    def create_pool_token(a, b):
         una = AssetParam.unitName(a)
         unb = AssetParam.unitName(b)
 

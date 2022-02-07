@@ -22,32 +22,34 @@ seed_amount = int(1e9)
 def approval(lock_start: int = 0, lock_stop: int = 0):
     assert lock_start < lock_stop
 
+    # Alias commonly used things
     me = Global.current_application_address()
-
     pool_token = App.globalGet(pool_token_key)
+    pool_balance = AssetHolding.balance(me, pool_token)
     governor = global_get_else(gov_key, Global.creator_address())
 
-    before_lock_start = And(Global.latest_timestamp() < Int(lock_start))
-    after_lock_stop = And(Global.latest_timestamp() > Int(lock_stop))
+    # Checks for if we're in the window for this action
+    before_lock_start = Global.latest_timestamp() < Int(lock_start)
+    after_lock_stop = Global.latest_timestamp() > Int(lock_stop)
 
     @Subroutine(TealType.uint64)
-    def mint_tokens(algos_in: TealType.uint64):
+    def mint_tokens(algos_in):
         # Mint in 1:1 with algos passed in
         return algos_in
 
     @Subroutine(TealType.uint64)
     def burn_tokens(
-        amt: TealType.uint64,
-        balance_algos: TealType.uint64,
-        tokens_minted: TealType.uint64,
+        amt,
+        balance_algos,
+        tokens_minted,
     ):
         # Return the number of tokens * (algos per token)
         return amt * ((balance_algos - Int(seed_amount)) / tokens_minted)
 
     @Subroutine(TealType.uint64)
     def join():
-        app_call = Gtxn[0]
-        payment = Gtxn[1]
+        # Alias for specific txn indicies
+        app_call, payment = Gtxn[0], Gtxn[1]
         well_formed_join = And(
             Global.group_size() == Int(2),  # App call, Payment to join
             app_call.type_enum() == TxnType.ApplicationCall,
@@ -58,11 +60,9 @@ def approval(lock_start: int = 0, lock_stop: int = 0):
             payment.sender() == app_call.sender(),
         )
 
-        pool_bal = AssetHolding.balance(me, pool_token)
-
         return Seq(
             # Init MaybeValues
-            pool_bal,
+            pool_balance,
             # TODO: uncomment when done testing on dev
             # Assert(before_lock_start),
             Assert(well_formed_join),
@@ -70,10 +70,11 @@ def approval(lock_start: int = 0, lock_stop: int = 0):
             Int(1),
         )
 
+    # Action to allow caller to exit the contract, burning pool tokens in exchange for algos
     @Subroutine(TealType.uint64)
     def exit():
-        app_call = Gtxn[0]
-        pool_xfer = Gtxn[1]
+        # Alias for specific txn indicies
+        app_call, pool_xfer = Gtxn[0], Gtxn[1]
         well_formed_exit = And(
             Global.group_size() == Int(2),
             app_call.type_enum() == TxnType.ApplicationCall,
@@ -84,24 +85,20 @@ def approval(lock_start: int = 0, lock_stop: int = 0):
             app_call.sender() == pool_xfer.sender(),
         )
 
-        pool_bal = AssetHolding.balance(me, pool_token)
-
         return Seq(
-            pool_bal,
+            pool_balance,
             # TODO: uncomment when done testing on dev
             # Assert(after_lock_stop),
             Assert(well_formed_exit),
+            # Looks good, pay 'em
             pay(
                 pool_xfer.sender(),
-                burn_tokens(
-                    pool_xfer.asset_amount(),
-                    Balance(me),
-                    get_minted()
-                ),
+                burn_tokens(pool_xfer.asset_amount(), Balance(me), get_minted()),
             ),
             Int(1),
         )
 
+    # Action to allow admin to commit algos or vote
     @Subroutine(TealType.uint64)
     def vote():
         app_call = Gtxn[0]
@@ -117,9 +114,7 @@ def approval(lock_start: int = 0, lock_stop: int = 0):
             InnerTxnBuilder.SetFields(
                 {
                     TxnField.type_enum: TxnType.Payment,
-                    TxnField.receiver: Txn.accounts[
-                        1
-                    ],  # TODO: this should be hardcoded not passed in
+                    TxnField.receiver: Txn.accounts[1],
                     TxnField.amount: Int(0),  # not strictly necessary
                     TxnField.note: Txn.application_args[
                         1
@@ -131,21 +126,19 @@ def approval(lock_start: int = 0, lock_stop: int = 0):
             Int(1),
         )
 
+    # Action to Bootstrap this application, creates pool token
     @Subroutine(TealType.uint64)
     def bootstrap():
-        seed = Gtxn[0]
-        app_call = Gtxn[1]
+        seed, app_call = Gtxn[0], Gtxn[1]
         well_formed_bootstrap = And(
             Global.group_size() == Int(2),
             # Seed amount so it can send transactions
             seed.type_enum() == TxnType.Payment,
             seed.amount() == Int(seed_amount),
-            #
             app_call.type_enum() == TxnType.ApplicationCall,
             app_call.sender() == governor,
             app_call.sender() == seed.sender(),
         )
-
 
         pool_token_check = App.globalGetEx(Int(0), pool_token_key)
 
@@ -175,21 +168,21 @@ def approval(lock_start: int = 0, lock_stop: int = 0):
             Int(1),
         )
 
+    # Return the number of tokens minted
     @Subroutine(TealType.uint64)
     def get_minted():
-        pool_bal = AssetHolding.balance(me, pool_token)
-        return Seq(pool_bal, Int(total_supply) - pool_bal.value())
+        return Seq(pool_balance, Int(total_supply) - pool_balance.value())
 
-
-
+    # Overwrite the current governor
     @Subroutine(TealType.uint64)
-    def set_governor(new_gov: TealType.bytes):
+    def set_governor(new_gov):
         return Seq(
             Assert(Txn.sender() == governor), App.globalPut(gov_key, new_gov), Int(1)
         )
 
+    # Util function to transfer an asset
     @Subroutine(TealType.none)
-    def axfer(reciever: TealType.bytes, aid: TealType.uint64, amt: TealType.uint64):
+    def axfer(reciever, aid, amt):
         return Seq(
             InnerTxnBuilder.Begin(),
             InnerTxnBuilder.SetFields(
@@ -198,14 +191,15 @@ def approval(lock_start: int = 0, lock_stop: int = 0):
                     TxnField.xfer_asset: aid,
                     TxnField.asset_amount: amt,
                     TxnField.asset_receiver: reciever,
-                    TxnField.fee: Int(0),
+                    TxnField.fee: Int(0),  # force caller to pay
                 }
             ),
             InnerTxnBuilder.Submit(),
         )
 
+    # Util function to make payment transaction
     @Subroutine(TealType.none)
-    def pay(receiver: TealType.bytes, amt: TealType.uint64):
+    def pay(receiver, amt):
         return Seq(
             InnerTxnBuilder.Begin(),
             InnerTxnBuilder.SetFields(
@@ -213,7 +207,7 @@ def approval(lock_start: int = 0, lock_stop: int = 0):
                     TxnField.type_enum: TxnType.Payment,
                     TxnField.amount: amt,
                     TxnField.receiver: receiver,
-                    TxnField.fee: Int(0),
+                    TxnField.fee: Int(0),  # force caller to pay
                 }
             ),
             InnerTxnBuilder.Submit(),
