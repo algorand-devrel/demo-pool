@@ -95,10 +95,6 @@ def demo():
         ],
     )
 
-    # drr = atc.dryrun(client)
-    # print(drr.trace.txns[2].app_trace())
-    # return
-
     atc.execute(client, 2)
     print_balances(app_addr, addr, pool_token, asset_a, asset_b)
 
