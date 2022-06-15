@@ -1,11 +1,12 @@
 import base64
 
 from algosdk import *
+from algosdk.atomic_transaction_composer import *
 from algosdk.algod import AlgodClient
 from algosdk.v2client import algod
 from algosdk.future.transaction import *
+from contract import build_program
 from sandbox import get_accounts
-from pool import approval, clear
 from pyteal import compileTeal, Mode
 
 token = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -13,11 +14,16 @@ url = "http://localhost:4001"
 
 client = algod.AlgodClient(token, url)
 
+contract: abi.Contract
+
 
 def demo(app_id=None, asset_a=None, asset_b=None):
+
     # Get Account from sandbox
     addr, sk = get_accounts()[0]
     print("Using {}".format(addr))
+
+    signer = AccountTransactionSigner(sk)
 
     if asset_a == None:
         asset_a = create_asset(addr, sk, "A")
@@ -27,9 +33,12 @@ def demo(app_id=None, asset_a=None, asset_b=None):
         asset_b = create_asset(addr, sk, "B")
         print("Created asset a with id: {}".format(asset_b))
 
+
+    approval, clear, contract = build_program(asset_a, asset_b)
+
     if app_id == None:
         # Create app
-        app_id = create_app(addr, sk, asset_a, asset_b)
+        app_id = create_app(addr, sk, approval, clear)
         print("Created App with id: {}".format(app_id))
 
     app_addr = logic.get_application_address(app_id)
@@ -40,101 +49,133 @@ def demo(app_id=None, asset_a=None, asset_b=None):
 
     # Bootstrap Pool
     sp = client.suggested_params()
-    txn_group = assign_group_id(
-        [
-            get_app_call(
-                addr, sp, app_id, app_args=["boot"], assets=[asset_a, asset_b]
-            ),
-        ]
+    atc = AtomicTransactionComposer()
+    atc.add_method_call(
+        app_id,
+        contract.get_method_by_name("bootstrap"),
+        addr,
+        sp,
+        signer,
+        [asset_a, asset_b],
     )
-    result = send("boot", [txn.sign(sk) for txn in txn_group])
-    pool_token = result["inner-txns"][0]["asset-index"]
-
+    result = atc.execute(client, 2)
+    pool_token = result.abi_results[0].return_value
     print("Created Pool Token: {}".format(pool_token))
 
     # Opt addr into newly created Pool Token
     sp = client.suggested_params()
-    txn_group = assign_group_id(
-        [
-            get_asset_xfer(addr, sp, pool_token, addr, 0),
-        ]
-    )
-    send("optin", [txn.sign(sk) for txn in txn_group])
+    txn_group = [AssetTransferTxn(addr, sp, addr, 0, pool_token)]
+    send("optin", [txn.sign(sk) for txn in assign_group_id(txn_group)])
     print_balances(app_addr, addr, pool_token, asset_a, asset_b)
 
     # Fund Pool with initial liquidity
     sp = client.suggested_params()
-    txn_group = assign_group_id(
+    atc = AtomicTransactionComposer()
+    atc.add_method_call(
+        app_id,
+        contract.get_method_by_name("fund"),
+        addr,
+        sp,
+        signer,
         [
-            get_app_call(
-                addr,
-                sp,
-                app_id,
-                app_args=["fund"],
-                assets=[asset_a, asset_b, pool_token],
+            TransactionWithSigner(
+                txn=AssetTransferTxn(addr, sp, app_addr, 1000, asset_a), signer=signer
             ),
-            AssetTransferTxn(addr, sp, app_addr, 1000, asset_a),
-            AssetTransferTxn(addr, sp, app_addr, 3000, asset_b),
-        ]
+            TransactionWithSigner(
+                txn=AssetTransferTxn(addr, sp, app_addr, 3000, asset_b), signer=signer
+            ),
+            asset_a,
+            asset_b,
+        ],
     )
-    send("fund", [txn.sign(sk) for txn in txn_group])
+    atc.execute(client, 2)
     print_balances(app_addr, addr, pool_token, asset_a, asset_b)
 
-    # Mint liquidity tokens
+    ###
+    # Mint pool tokens
+    ###
     sp = client.suggested_params()
-    txn_group = assign_group_id(
+    atc = AtomicTransactionComposer()
+    atc.add_method_call(
+        app_id,
+        contract.get_method_by_name("mint"),
+        addr,
+        sp,
+        signer,
         [
-            get_app_call(
-                addr,
-                sp,
-                app_id,
-                app_args=["mint"],
-                assets=[asset_a, asset_b, pool_token],
+            TransactionWithSigner(
+                txn=AssetTransferTxn(addr, sp, app_addr, 100000, asset_a), signer=signer
             ),
-            get_asset_xfer(addr, sp, asset_a, app_addr, 100000),
-            get_asset_xfer(addr, sp, asset_b, app_addr, 10000),
-        ]
+            TransactionWithSigner(
+                txn=AssetTransferTxn(addr, sp, app_addr, 1000, asset_b), signer=signer
+            ),
+            pool_token,
+            asset_a,
+            asset_b,
+        ],
     )
-
-    send("mint", [txn.sign(sk) for txn in txn_group])
+    atc.execute(client, 2)
     print_balances(app_addr, addr, pool_token, asset_a, asset_b)
 
+    ###
     # Swap A for B
+    ###
     sp = client.suggested_params()
-    txn_group = assign_group_id(
+    atc = AtomicTransactionComposer()
+    atc.add_method_call(
+        app_id,
+        contract.get_method_by_name("swap"),
+        addr,
+        sp,
+        signer,
         [
-            get_app_call(addr, sp, app_id, ["swap"], [asset_a, asset_b]),
-            get_asset_xfer(addr, sp, asset_a, app_addr, 5),
-        ]
+            TransactionWithSigner(
+                txn=AssetTransferTxn(addr, sp, app_addr, 5, asset_a), signer=signer
+            ),
+            asset_a,
+            asset_b,
+        ],
     )
-    send("swap_a_b", [txn.sign(sk) for txn in txn_group])
+    atc.execute(client, 2)
     print_balances(app_addr, addr, pool_token, asset_a, asset_b)
 
+    ###
     # Swap B for A
+    ###
     sp = client.suggested_params()
-    txn_group = assign_group_id(
+    atc = AtomicTransactionComposer()
+    atc.add_method_call(
+        app_id,
+        contract.get_method_by_name("swap"),
+        addr,
+        sp,
+        signer,
         [
-            get_app_call(addr, sp, app_id, ["swap"], [asset_a, asset_b]),
-            get_asset_xfer(addr, sp, asset_b, app_addr, 5),
-        ]
+            TransactionWithSigner(
+                txn=AssetTransferTxn(addr, sp, app_addr, 5, asset_b), signer=signer
+            ),
+            asset_a,
+            asset_b,
+        ],
     )
-    send("swap_b_a", [txn.sign(sk) for txn in txn_group])
+    atc.execute(client, 2)
     print_balances(app_addr, addr, pool_token, asset_a, asset_b)
 
-    # Burn liq tokens
+    ###
+    # Burn pool tokens
+    ###
     sp = client.suggested_params()
-    txn_group = assign_group_id(
-        [
-            get_app_call(addr, sp, app_id, ["burn"], [asset_a, asset_b, pool_token]),
-            get_asset_xfer(addr, sp, pool_token, app_addr, 1000),
-        ]
-    )
-    send("burn", [txn.sign(sk) for txn in txn_group])
+    atc = AtomicTransactionComposer()
+    atc.add_method_call(app_id, contract.get_method_by_name("burn"), addr, sp, signer, [
+            TransactionWithSigner(
+                txn=AssetTransferTxn(addr, sp, app_addr, 100, pool_token), signer=signer
+            ),
+            pool_token,
+            asset_a,
+            asset_b,
+    ])
+    atc.execute(client, 2)
     print_balances(app_addr, addr, pool_token, asset_a, asset_b)
-
-
-def get_asset_xfer(addr, sp, asset_id, app_addr, amt):
-    return AssetTransferTxn(addr, sp, app_addr, amt, asset_id)
 
 
 def get_app_call(addr, sp, app_id, app_args=[], assets=[], accounts=[]):
@@ -163,14 +204,12 @@ def create_asset(addr, pk, unitname):
     return result["asset-index"]
 
 
-def create_app(addr, pk, a, b):
+def create_app(addr, pk, approval_prog, clear_prog):
     # Read in approval teal source && compile
-    approval_prog = compileTeal(approval(a, b), mode=Mode.Application, version=5)
     app_result = client.compile(approval_prog)
     app_bytes = base64.b64decode(app_result["result"])
 
     # Read in clear teal source && compile
-    clear_prog = compileTeal(clear(), mode=Mode.Application, version=5)
     clear_result = client.compile(clear_prog)
     clear_bytes = base64.b64decode(clear_result["result"])
 
