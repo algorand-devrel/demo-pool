@@ -333,7 +333,8 @@ def build_program(a: int, b: int):
     approval, clear, contract = router.compile_program(
         version=6, optimize=OptimizeOptions(scratch_slots=True)
     )
-    return  approval, clear, contract
+    return approval, clear, contract
+
 
 if __name__ == "__main__":
     path = os.path.dirname(os.path.abspath(__file__))
@@ -348,7 +349,7 @@ if __name__ == "__main__":
     with open(os.path.join(path, "contract.json"), "w") as f:
         import json
 
-        f.write(json.dumps(contract.dictify()))
+        f.write(json.dumps(contract.dictify(), indent=2))
 
     with open(os.path.join(path, "approval.teal"), "w") as f:
         f.write(approval)

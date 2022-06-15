@@ -33,7 +33,6 @@ def demo(app_id=None, asset_a=None, asset_b=None):
         asset_b = create_asset(addr, sk, "B")
         print("Created asset a with id: {}".format(asset_b))
 
-
     approval, clear, contract = build_program(asset_a, asset_b)
 
     if app_id == None:
@@ -166,14 +165,21 @@ def demo(app_id=None, asset_a=None, asset_b=None):
     ###
     sp = client.suggested_params()
     atc = AtomicTransactionComposer()
-    atc.add_method_call(app_id, contract.get_method_by_name("burn"), addr, sp, signer, [
+    atc.add_method_call(
+        app_id,
+        contract.get_method_by_name("burn"),
+        addr,
+        sp,
+        signer,
+        [
             TransactionWithSigner(
                 txn=AssetTransferTxn(addr, sp, app_addr, 100, pool_token), signer=signer
             ),
             pool_token,
             asset_a,
             asset_b,
-    ])
+        ],
+    )
     atc.execute(client, 2)
     print_balances(app_addr, addr, pool_token, asset_a, asset_b)
 
