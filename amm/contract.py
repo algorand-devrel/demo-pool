@@ -5,11 +5,6 @@ from pyteal import *
 
 # WARNING: THIS IS NOT PROODUCTION LEVEL CODE
 
-# TODO: setme directly or via build_program
-asset_a = 0
-asset_b = 0
-
-
 fee = Int(5)
 total_supply = Int(int(1e10))
 scale = Int(1000)
@@ -89,9 +84,7 @@ def do_create_pool_token(a, b):
     )
 
 
-def build_program(
-    asset_a=asset_a, asset_b=asset_b
-) -> Tuple[str, str, sdk_abi.Contract]:
+def build_program(asset_a: int, asset_b: int) -> Tuple[str, str, sdk_abi.Contract]:
     assert asset_a < asset_b
 
     asset_a = Int(asset_a)
